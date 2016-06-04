@@ -10,9 +10,9 @@ import jake_niak_utils as jni
 from scipy.io import loadmat
 from glob import glob
 
-image1 = '/Users/jakevogel/bellec_lab/aaic/density/masked_HCP_mean.nii.gz'
-image2 = '/Users/jakevogel/bellec_lab/aaic/density/spmT_0001.nii'
-msk = '/Users/jakevogel/bellec_lab/aaic/density/mask_GM.nii'
+#image1 = '/Users/jakevogel/bellec_lab/aaic/density/masked_HCP_mean.nii.gz'
+#image2 = '/Users/jakevogel/bellec_lab/aaic/density/spmT_0001.nii'
+#msk = '/Users/jakevogel/bellec_lab/aaic/density/mask_GM.nii'
 #xlab =
 #ylab = 
 #title =
@@ -27,7 +27,8 @@ def load_data(image1,image2,msk):
             dmask.append(1)
         else:
             dmask.append(0)
-    dmask = np.logical_not(dmask)
+
+ dmask = np.logical_not(dmask)
     data1 = np.ma.masked_array(ni.load(image1).get_data(),mask = dmask).flatten()
     data2 = np.ma.masked_array(ni.load(image2).get_data(),mask = dmask).flatten()
 
@@ -41,7 +42,21 @@ def corr_n_plot(data1,data2):
     print 'r = %s, p = %s'%(r,p)
     plt.show()
 
-def make_parcelwise_map(rdf,scale_templ, outfl, add = False, col = ''):
+def codegen(N):
+    cde = ''.join(random.choice(string.ascii_lowercase) for _ in range(N))
+
+    return cde
+
+def pthswp(wpth):
+    oldpth = os.get_cwd()
+    os.chdir(wpth)
+
+    return oldpth
+
+def make_parcelwise_map(wpth,rdf,scale_templ, outfl, add = False, col = ''):
+    oldpth = pathswp(wpth)
+    cde = codegen(6)
+
     if not col:
         col = rdf.columns[0]
     for x in rdf.index.tolist():
@@ -50,15 +65,17 @@ def make_parcelwise_map(rdf,scale_templ, outfl, add = False, col = ''):
         else:
             i = x
         val = rdf.ix[x,col]
-        os.system('fslmaths %s -thr %s img'%(scale_templ,(i)))
-        os.system('fslmaths img.nii.gz -uthr %s img2'%(i))
-        os.system('fslmaths img2.nii.gz -div img2.nii.gz img3')
+        os.system('fslmaths %s -thr %s %s1'%(scale_templ,i,cde))
+        os.system('fslmaths %s1.nii.gz -uthr %s %s2'%(cde,i,cde))
+        os.system('fslmaths %s2.nii.gz -div $s2.nii.gz %s3'%(cde,cde,cde))
         if x == rdf.index.tolist()[0]:
-            os.system('fslmaths img3.nii.gz -mul %s %s'%(val,outfl))
+            os.system('fslmaths %s3.nii.gz -mul %s %s'%(cde,val,outfl))
         else:
-            os.system('fslmaths img3.nii.gz -mul %s img4'%(val))
-            os.system('fslmaths img4.nii.gz -add %s.nii.gz %s'%(outfl,outfl))
+            os.system('fslmaths %s3.nii.gz -mul %s %s4'%(cde,val,cde))
+            os.system('fslmaths %s4.nii.gz -add %s.nii.gz %s'%(cde,outfl,outfl))
         print 'seed %s built'%(i)
+    os.system('rm %s*'%(cde))
+    os.chdir(oldpth)
 
 def img_2_maskd_array(img):
     msk = np.array(ni.load(img).get_data()).flatten()
@@ -73,7 +90,12 @@ def img_2_maskd_array(img):
 
     return msk
 
-def in_out_mask_ttest_from_conn_map(rseedz, imsk, omsk):
+def in_out_mask_ttest_from_conn_map(wpth,rseedz, imsk, omsk):
+
+    oldpth = pthswp(wpth)
+
+    incde = codegen(6)
+    outcde = codegen(6)
 
     print 'generating data masks....'
     inmsk = img_2_maskd_array(imsk)
@@ -85,10 +107,10 @@ def in_out_mask_ttest_from_conn_map(rseedz, imsk, omsk):
         ind.append((i+1))
     df = pandas.DataFrame(np.zeros((len(rseedz),4)),index = ind, columns =['t','p','wt','wp'])
     for i,seed in enumerate(rseedz):
-        os.system('fslmaths %s -mas %s in'%(seed,imsk))
-        os.system('fslmaths %s -mas %s out'%(seed,omsk))
-        invals = np.ma.masked_array(ni.load('in.nii.gz').get_data(),mask = inmsk).flatten()
-        outvals = np.ma.masked_array(ni.load('out.nii.gz').get_data(),mask = outmsk).flatten()
+        os.system('fslmaths %s -mas %s %s'%(seed,imsk,incde))
+        os.system('fslmaths %s -mas %s %s'%(seed,omsk,outcde))
+        invals = np.ma.masked_array(ni.load('%s.nii.gz'%(incde)).get_data(),mask = inmsk).flatten()
+        outvals = np.ma.masked_array(ni.load('%s.nii.gz'%outcde)).get_data(),mask = outmsk).flatten()
         t,p = st.ttest_ind(invals,outvals)
         wt,wp = st.ttest_ind(invals,outvals,equal_var = False)
         df.ix[(i+1),'t'] = t 
@@ -97,23 +119,29 @@ def in_out_mask_ttest_from_conn_map(rseedz, imsk, omsk):
         df.ix[(i+1),'wp'] = wp
         print 'finished with seed %s'%(seed)
 
+    os.system('rm %s* %s*'%(incde,outcde))
+    os.chdir(oldpth)
+
     return df
 
-def in_out_mask_ttest_from_glm_file(scale_path,contrast,scale,imsk,omsk,parcel_img,membership=[],conndf=None):
+def in_out_mask_ttest_from_glm_file(wpth,scale_path,contrast,scale,imsk,omsk,parcel_img,membership=[],conndf=None):
+
+    oldpth = pthswp(wpth)
 
     if not membership:
         #determine which seeds are in which mask
         inseedz = []
         outseedz = []
         tdf = pandas.DataFrame(np.zeros((scale,4)), columns=['t','p','wt','wp'])
+        cde = codegen(6)
         print 'determining parcel membership...'
 
         for i in range(1,(scale+1)):
-            os.system('fslmaths %s -thr %s -uthr %s tmp'%(parcel_img,i,i))
-            os.system('fslmaths tmp.nii.gz -mas %s tmp1'%(imsk))
-            os.system('fslmaths tmp.nii.gz -mas %s tmp2'%(omsk))
-            ival = subprocess.check_output('fslstats tmp1.nii.gz -V',shell = True).rsplit()[0]
-            oval = subprocess.check_output('fslstats tmp2.nii.gz -V',shell = True).rsplit()[0]
+            os.system('fslmaths %s -thr %s -uthr %s %s'%(parcel_img,i,i,cde))
+            os.system('fslmaths %s.nii.gz -mas %s %s1'%(cde,imsk,cde))
+            os.system('fslmaths %s.nii.gz -mas %s %s2'%(cde,omsk,cde))
+            ival = subprocess.check_output('fslstats %s1.nii.gz -V'%(cde),shell = True).rsplit()[0]
+            oval = subprocess.check_output('fslstats %s2.nii.gz -V'%(cde),shell = True).rsplit()[0]
             # determine membership via winner-takes-all
             if int(ival) > int(oval):
                 inseedz.append(i)
@@ -126,6 +154,8 @@ def in_out_mask_ttest_from_glm_file(scale_path,contrast,scale,imsk,omsk,parcel_i
     else:
         inseedz = membership[0]
         outseedz = membership[1]
+
+    os.system('rm %s*')
 
     print 'preparing connectivity map...'
 
@@ -162,17 +192,20 @@ def in_out_mask_ttest_from_glm_file(scale_path,contrast,scale,imsk,omsk,parcel_i
         tdf.ix[(i+1),'wt'] = wt
         tdf.ix[(i+1),'wp'] = wp
 
+    os.chdir(oldpth)
+
     return tdf,df,inseedz,outseedz
 
-def get_parcelwise_correlation_map_from_connectivity_map(rseedz,parcel_img,nparcels):
+def get_parcelwise_correlation_map_from_connectivity_map(wpth,rseedz,parcel_img,nparcels):
+    oldpth = pthswp(wpth)
+    cde = codegen(6)
     df = pandas.DataFrame(np.zeros((len(nparcel),4)),columns = ['rval','rp','rho','rhop'])
     for num,seed in enumerate(rseedz):
         they = []
         for i in range(nparcels):
-            os.system('fslmaths %s -thr %s jnk'%(parcel_img,(i+1)))
-            os.system('fslmaths jnk.nii.gz -uthr %s jnk'%(i+1))
-            os.system('fslmaths %s -mas jnk.nii.gz msk1'%(seed))
-            val1 = subprocess.check_output('fslstats msk1.nii.gz -M', shell = True)
+            os.system('fslmaths %s -thr %s -uthr %s %s'%(parcel_img,(i+1),(i+1),cde))
+            os.system('fslmaths %s -mas %s.nii.gz %s1'%(cde,seed,cde))
+            val1 = subprocess.check_output('fslstats %s1.nii.gz -M'%(cde), shell = True)
             they.append(val1)
         nthey = [float(x) for x in they]
         nthey = np.array(nthey)
@@ -182,10 +215,13 @@ def get_parcelwise_correlation_map_from_connectivity_map(rseedz,parcel_img,nparc
         df.ix[num,'rp'] = p
         df.ix[num,'rho'] = rho
         df.ix[num,'rhop'] = rp
-        
+    os.system('rm %s*'%(cde))
+    os.chdir(oldpth)
+
     return df
 
-def get_parcelwise_correlation_map_from_glm_file(scale_path,scale_templ,scale,contrast,cov_msk='',cov_img='',conndf = ''):
+def get_parcelwise_correlation_map_from_glm_file(wpth, scale_path,scale_templ,scale,contrast,cov_msk='',cov_img='',conndf = ''):
+    oldpth = pthswp(wpth)
     rdf = pandas.DataFrame(np.zeros((scale,4)),columns =['rval','rp','rho','rhop'])
 
     try:
@@ -222,8 +258,11 @@ def get_parcelwise_correlation_map_from_glm_file(scale_path,scale_templ,scale,co
         rdf.ix[i,'rval'] = r
         rdf.ix[i,'rp'] = p
         rdf.ix[i,'rho'] = rho
-        rdf.ix[i,'rhop'] = rp
+        rdf.ix[i,'rhop'] = rpi
+
     print 'finished all seeds'
+
+    os.chdir(oldpth)
 
     return df, rdf
 
@@ -239,14 +278,19 @@ def get_parcelwise_correlation_map_from_glm_file(scale_path,scale_templ,scale,co
 #        pdf.ix[perc,'ivox'] = int(ivox)
 #        pdf.ix[perc,'mvox'] = int(mvox)
 
-def convert_voxels_to_parcels(to_convert,scale_templ,scale):
+def convert_voxels_to_parcels(wpth,to_convert,scale_templ,scale):
+
+    oldpth = pthswp(wpth)
+    cde = codegen(6)
     scalar = []
     for i in range(scale):
-        os.system('fslmaths %s -thr %s jnk'%(scale_templ,(i+1)))
-        os.system('fslmaths jnk.nii.gz -uthr %s jnk'%(i+1))
-        os.system('fslmaths %s -mas jnk.nii.gz msk1'%(to_convert))
-        val1 = subprocess.check_output('fslstats msk1.nii.gz -M', shell = True)
+        os.system('fslmaths %s -thr %s -uthr %s %s'%(scale_templ,(i+1),(i+1),cde))
+        os.system('fslmaths %s -mas %s.nii.gz %s1'%(cde,to_convert,cde))
+        val1 = subprocess.check_output('fslstats %s1.nii.gz -M'%(cde), shell = True)
         scalar.append(val1)
+
+    os.system('rm %s*'%(cde))
+    os.chdir(oldpth)
 
     return scalar
 

@@ -28,7 +28,7 @@ def load_data(image1,image2,msk):
         else:
             dmask.append(0)
 
- dmask = np.logical_not(dmask)
+    dmask = np.logical_not(dmask)
     data1 = np.ma.masked_array(ni.load(image1).get_data(),mask = dmask).flatten()
     data2 = np.ma.masked_array(ni.load(image2).get_data(),mask = dmask).flatten()
 
@@ -48,7 +48,7 @@ def codegen(N):
     return cde
 
 def pthswp(wpth):
-    oldpth = os.get_cwd()
+    oldpth = os.getcwd()
     os.chdir(wpth)
 
     return oldpth
@@ -110,7 +110,7 @@ def in_out_mask_ttest_from_conn_map(wpth,rseedz, imsk, omsk):
         os.system('fslmaths %s -mas %s %s'%(seed,imsk,incde))
         os.system('fslmaths %s -mas %s %s'%(seed,omsk,outcde))
         invals = np.ma.masked_array(ni.load('%s.nii.gz'%(incde)).get_data(),mask = inmsk).flatten()
-        outvals = np.ma.masked_array(ni.load('%s.nii.gz'%outcde)).get_data(),mask = outmsk).flatten()
+        outvals = np.ma.masked_array(ni.load('%s.nii.gz'%(outcde)).get_data(),mask = outmsk).flatten()
         t,p = st.ttest_ind(invals,outvals)
         wt,wp = st.ttest_ind(invals,outvals,equal_var = False)
         df.ix[(i+1),'t'] = t 

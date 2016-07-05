@@ -354,9 +354,10 @@ def create_sliding_window_images(pan,scale_templ,outdir,outfl,add=False):
         connex = ndf.mean(axis=0).to_frame()
         make_parcelwise_map(outdir,connex,scale_templ,outfl=os.path.join(outdir,'%s%s'%(outfl,i)),add=add)
 
-def identify_labels_within_mask(wpth,networks,mask):
+def identify_labels_within_mask(wpth,networks,mask,as_int=True):
     """networks is a list of paths to labeled atlases
-    mask is a path to an image you wish to mask atlas with"""
+    mask is a path to an image you wish to mask atlas with
+    leave as_int true if you want label values to be returned as integers"""
 
     oldpth = pthswp(wpth)
     cde = codegen(6)
@@ -367,14 +368,19 @@ def identify_labels_within_mask(wpth,networks,mask):
         print 'working on network %s'%(net)
         os.system('fslmaths %s -mas %s %s'%(net,mask,cde))
         nimg = '%s.nii.gz'%(cde)
-        data = np.array(ni.load(nimg)).get_data()).flatten()
+        data = np.array(ni.load(nimg).get_data().flatten())
         msk = np.logical_not(img_2_maskd_array(nimg))
         unique = []
         for vox in data[msk]:
             if vox not in unique:
-                unique.append(vox)
+                if as_int:
+                    unique.append(int(vox))
+                else:
+                    unique.append(vox)
 
-        labels_out.append({net: unique})
+        labels_out.update({net: unique})
 
     os.system('rm %s'%(nimg))
     os.chdir(oldpth)
+
+    return labels_out

@@ -54,7 +54,7 @@ def pthswp(wpth):
     return oldpth
 
 def make_parcelwise_map(wpth,rdf,scale_templ, outfl, add = False, col = ''):
-    oldpth = pathswp(wpth)
+    oldpth = pthswp(wpth)
     cde = codegen(6)
 
     if not col:
@@ -67,7 +67,7 @@ def make_parcelwise_map(wpth,rdf,scale_templ, outfl, add = False, col = ''):
         val = rdf.ix[x,col]
         os.system('fslmaths %s -thr %s %s1'%(scale_templ,i,cde))
         os.system('fslmaths %s1.nii.gz -uthr %s %s2'%(cde,i,cde))
-        os.system('fslmaths %s2.nii.gz -div $s2.nii.gz %s3'%(cde,cde,cde))
+        os.system('fslmaths %s2.nii.gz -div %s2.nii.gz %s3'%(cde,cde,cde))
         if x == rdf.index.tolist()[0]:
             os.system('fslmaths %s3.nii.gz -mul %s %s'%(cde,val,outfl))
         else:
@@ -124,15 +124,15 @@ def in_out_mask_ttest_from_conn_map(wpth,rseedz, imsk, omsk):
 
     return df
 
-def in_out_mask_ttest_from_glm_file(wpth,scale_path,contrast,scale,imsk,omsk,parcel_img,membership=[],conndf=None):
+def in_out_mask_ttest_from_glm_file(wpth,scale_path,contrast,scale,imsk,omsk,parcel_img,membership=[],conndf=''):
 
     oldpth = pthswp(wpth)
+    tdf = pandas.DataFrame(np.zeros((scale,4)), columns=['t','p','wt','wp'])
 
     if not membership:
         #determine which seeds are in which mask
         inseedz = []
         outseedz = []
-        tdf = pandas.DataFrame(np.zeros((scale,4)), columns=['t','p','wt','wp'])
         cde = codegen(6)
         print 'determining parcel membership...'
 
@@ -151,15 +151,15 @@ def in_out_mask_ttest_from_glm_file(wpth,scale_path,contrast,scale,imsk,omsk,par
                 print 'seed %s going outside mask'%(i)
             else:
                 print 'could not resolve seed %s. In vox = %s, out vox = %s. Excluding from analysis'%(i,ival,oval)
+        os.system('rm %s*')
     else:
         inseedz = membership[0]
         outseedz = membership[1]
 
-    os.system('rm %s*')
 
     print 'preparing connectivity map...'
 
-    if type(conndf) != pandas.core.frame.DataFrame:
+    if type(conndf) == pandas.core.frame.DataFrame:
         df = conndf
     else:
         df = jni.create_df_from_glm(scale_path,contrast,pval=0.1)
@@ -239,7 +239,7 @@ def get_parcelwise_correlation_map_from_glm_file(wpth, scale_path,scale_templ,sc
     else:
         scalar = cov_msk
 
-    if conndf:
+    if conndf == pandas.core.frame.DataFrame:
         df = conndf
     else:
         print 'converting matrix...'
@@ -258,7 +258,7 @@ def get_parcelwise_correlation_map_from_glm_file(wpth, scale_path,scale_templ,sc
         rdf.ix[i,'rval'] = r
         rdf.ix[i,'rp'] = p
         rdf.ix[i,'rho'] = rho
-        rdf.ix[i,'rhop'] = rpi
+        rdf.ix[i,'rhop'] = rp
 
     print 'finished all seeds'
 
@@ -346,11 +346,35 @@ def generate_sliding_window_panel_from_matfiles(mat_pth,subdict,num_windows,scal
 
     return pan
 
-def create_sliding_window_images(pan,scale_templ,outdir,outfl):
+def create_sliding_window_images(pan,scale_templ,outdir,outfl,add=False):
 
     for i in range(len(pan.items.tolist())):
         print 'working on window %s'%(i)
         ndf = pan.ix['gp%s'%(i)]
         connex = ndf.mean(axis=0).to_frame()
-        make_parcelwise_map(connex,scale_templ,outfl=os.path.join(outdir,'%s%s'%(outfl,i)))
+        make_parcelwise_map(outdir,connex,scale_templ,outfl=os.path.join(outdir,'%s%s'%(outfl,i)),add=add)
 
+def identify_labels_within_mask(wpth,networks,mask):
+    """networks is a list of paths to labeled atlases
+    mask is a path to an image you wish to mask atlas with"""
+
+    oldpth = pthswp(wpth)
+    cde = codegen(6)
+
+    labels_out = {}
+
+    for net in networks:
+        print 'working on network %s'%(net)
+        os.system('fslmaths %s -mas %s %s'%(net,mask,cde))
+        nimg = '%s.nii.gz'%(cde)
+        data = np.array(ni.load(nimg)).get_data()).flatten()
+        msk = np.logical_not(img_2_maskd_array(nimg))
+        unique = []
+        for vox in data[msk]:
+            if vox not in unique:
+                unique.append(vox)
+
+        labels_out.append({net: unique})
+
+    os.system('rm %s'%(nimg))
+    os.chdir(oldpth)

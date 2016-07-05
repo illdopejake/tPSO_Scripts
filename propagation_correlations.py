@@ -384,3 +384,36 @@ def identify_labels_within_mask(wpth,networks,mask,as_int=True):
     os.chdir(oldpth)
 
     return labels_out
+
+def extract_data_from_specific_connections(labels,glm_key,outfl):
+    """labels is a dict produced from the above function, with key = path to
+    atlas and value = labels to extract
+    glm_key is a dict mapping path to atlas (key) to a list where the first
+    item is NIAK glm_file and the second is the number of parcels (value)
+    outfl is label for output spreadsheet"""
+
+    for atl,glm in glm_key.iteritems():
+        scale_num = glm[1]
+        glm = glm[0]
+        print 'working on %s'%(glm)
+        mat = loadmat(glm)
+        p = mat['pce'][0]
+        eff = mat['eff'][0]
+        dictp = jni.reshuffle_matrix(p,int(scale_num))
+        df = pandas.DataFrame(np.zeros((len(p),1)), index=sorted(dictp.keys()), columns = ['p'])
+        for conn in df.index.tolist():
+            df.ix[conn,'p'] = dictp[conn]
+
+        targets = labels[atl]
+        connz = []
+        for lab in targets:
+            for i in df.index.tolist():
+                if lab in i:
+                    connz.append(i)
+
+        for conn in df.index.tolist():
+            if conn not in connz:
+                df.drop(conn,axix=0,inplace=True)
+
+        flnm = atl.rsplit('.')[0]
+        df.to_csv('%s_%s.csv'%(outfl,flnm))

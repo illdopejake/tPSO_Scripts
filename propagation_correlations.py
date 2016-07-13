@@ -417,3 +417,57 @@ def extract_data_from_specific_connections(labels,glm_key,outfl):
 
         flnm = atl.rsplit('.')[0]
         df.to_csv('%s_%s.csv'%(outfl,flnm))
+
+def generate_rvals_maps_from_glm(wpth,scl_num,scale_templ,contr,outfl):
+
+    oldpth = pthswp(wpth)
+    cde = codegen(6)
+    cnx = sorted(glob(os.path.join(wpth,'connectome*.mat')))
+
+    for x in range(1,scl_num+1):
+        os.system('fslmaths %s -thr %s -uthr %s -bin %s'%(scale_templ,x,x,'%s_%s'%(cde,x)))
+
+    for cnt in cnx:
+        pth,matnm = os.path.split(cnt)
+        sid = matnm.rsplit('_')[1]
+        print 'working on subject %s'%(sid)
+        ofl = '%s_%s'%(sid,outfl)
+        df = jni.create_df_from_mat(cnt,scl_no=scl_num,pval=0.05,mat_tp='ind',eff_tp=contr)
+        d_seedz = {}
+        for i in range(1,scl_num+1):
+            seedz = []
+            for conn in df.index.tolist():
+                for c in conn:
+                    if c == i:
+                        if conn not in seedz:
+                            seedz.append(conn)
+            d_seedz.update({i:seedz})
+
+        for seed,edges in d_seedz.iteritems():
+            for edge in edges:
+                if edge[0] == seed:
+                    img_no = edge[1]
+                else:
+                    img_no = edge[0]
+                val = df.ix[edge,df.columns[0]]
+                tofl = '%s_in_%s'%(cde,img_no)
+                os.system('fslmaths %s_%s.nii.gz -mul %s %s'%(cde,img_no,val,tofl))
+            tmp = sorted(glob('*_in_*'))
+            stg = 'fslmaths %s -add '%(tmp[0])
+            for z in range(1,len(tmp)):
+                if z == (len(tmp)-1):
+                    stg = stg+'%s %s'%(tmp[z],'%s_3d_%s'%(cde,seed))
+                else:
+                    stg = stg+'%s -add '%(tmp[z])
+            print 'building seedmap %s'%(seed)
+            os.system(stg)
+
+        volz = sorted(glob('*_3d_*'))
+        vstg = 'fslmerge -t %s_scl%s_rmap'%(sid,scl_num)
+        for y in range(len(volz)):
+            vstg = vstg+' %s'%(volz[y])
+        print 'building 4D volume...'
+        os.system(vstg)
+
+    os.system('rm %s*'%(cde))
+    os.chdir(oldpth)

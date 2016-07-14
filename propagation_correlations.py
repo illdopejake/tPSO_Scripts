@@ -220,37 +220,40 @@ def get_parcelwise_correlation_map_from_connectivity_map(wpth,rseedz,parcel_img,
 
     return df
 
-def get_parcelwise_correlation_map_from_glm_file(wpth, scale_path,scale_templ,scale,contrast,cov_msk='',cov_img='',conndf = ''):
+def get_parcelwise_correlation_map_from_glm_file(wpth,mat_path,scale_templ,scale,contrast,eff='r',cov_msk='',cov_img='',conndf = ''):
     oldpth = pthswp(wpth)
     rdf = pandas.DataFrame(np.zeros((scale,4)),columns =['rval','rp','rho','rhop'])
 
-    try:
-        cov_msk
-    except:
-        try:
-            cov_img
-        except:
+    if cov_msk != '':
+        scalar = cov_msk
+    else:
+        if cov_img == '':
             raise IOError('you need to include either a covariate image or amaskd_np array')
         else:
             print 'resampling image covariate to parcels...'
-            scalar = wr.convert_voxels_to_parcels(cov_img,scale_templ,scale)
+            scalar = convert_voxels_to_parcels(wpth,cov_img,scale_templ,scale)
             scalar = [float(x) for x in scalar]
             scalar = np.array(scalar)
-    else:
-        scalar = cov_msk
 
     if conndf == pandas.core.frame.DataFrame:
         df = conndf
     else:
         print 'converting matrix...'
-        df = jni.create_df_from_glm(scale_path,contrast,pval=0.1)
+        if eff == 'r':
+            df = jni.create_df_from_mat(mat_path,scale,pval=0.1,mat_tp='glm')
+            effcol = 'eff'
+        elif eff == 't':
+            df = jni.create_df_from_mat(mat_path,scale,pval=0.01,mat_tp='glm',eff_tp ='ttest')
+            effcol = 'ttest'
+        else:
+            raise ValueError('a value of r (correlation map) or t (tmap) must be entered for eff')
     for i in range(scale):
         print 'calculating parcelwise correlation for seed %s'%(i)
         they = []
         for ind in df.index.tolist():
             for x in ind:
                 if x == (i+1):
-                    they.append(df.ix[ind,'eff'])
+                    they.append(df.ix[ind,effcol])
         they.remove(they[i]) # removes a redundant connection
         nthey = np.array(they)
         r,p = st.pearsonr(nthey,scalar)
@@ -264,7 +267,7 @@ def get_parcelwise_correlation_map_from_glm_file(wpth, scale_path,scale_templ,sc
 
     os.chdir(oldpth)
 
-    return df, rdf
+    return df, rdf, scalar
 
 #def get_in_out_mask_vox_counts(percs, mskd_conmap,
 #    for perc in percs:

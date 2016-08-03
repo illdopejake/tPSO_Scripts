@@ -220,7 +220,11 @@ def get_parcelwise_correlation_map_from_connectivity_map(wpth,rseedz,parcel_img,
 
     return df
 
-def get_parcelwise_correlation_map_from_glm_file(wpth,mat_path,scale_templ,scale,contrast,eff='r',cov_msk='',cov_img='',conndf = ''):
+def get_parcelwise_correlation_map_from_glm_file(wpth,mat_path,scale_templ,scale,contrast,eff='r',cov_msk='',cov_img='',conndf= '',poly=1):
+    if poly < 2 or type(poly) != int:
+        print 'no polynomial contrast applied'
+        poly = False
+
     oldpth = pthswp(wpth)
     rdf = pandas.DataFrame(np.zeros((scale,4)),columns =['rval','rp','rho','rhop'])
 
@@ -258,10 +262,24 @@ def get_parcelwise_correlation_map_from_glm_file(wpth,mat_path,scale_templ,scale
         nthey = np.array(they)
         r,p = st.pearsonr(nthey,scalar)
         rho,rp = st.spearmanr(nthey,scalar)
+        if poly:
+            poly_r1,pp1 = st.pearsonr(nthey,scalar**poly)
+            poly_r2,pp2 = st.pearsonr(nthey**poly,scalar)
+            poly_rho1,rpp1 = st.spearmanr(nthey,scalar**poly)
+            poly_rho2,rpp2 = st.spearmanr(nthey**poly,scalar)
         rdf.ix[i,'rval'] = r
         rdf.ix[i,'rp'] = p
         rdf.ix[i,'rho'] = rho
         rdf.ix[i,'rhop'] = rp
+        if poly:
+            rdf.ix[i,'poly_rval1'] = poly_r1
+            rdf.ix[i,'poly_rp1'] = pp1
+            rdf.ix[i,'poly_rval2'] = poly_r2
+            rdf.ix[i,'poly_rp2'] = pp2
+            rdf.ix[i,'poly_rho1'] = poly_rho1
+            rdf.ix[i,'poly_rhop1'] = rpp1
+            rdf.ix[i,'poly_rho2'] = poly_rho2
+            rdf.ix[i,'poly_rhop2'] = rpp2
 
     print 'finished all seeds'
 
@@ -288,7 +306,7 @@ def convert_voxels_to_parcels(wpth,to_convert,scale_templ,scale):
     scalar = []
     for i in range(scale):
         os.system('fslmaths %s -thr %s -uthr %s %s'%(scale_templ,(i+1),(i+1),cde))
-        os.system('fslmaths %s -mas %s.nii.gz %s1'%(cde,to_convert,cde))
+        os.system('fslmaths %s -mas %s.nii.gz %s1'%(to_convert,cde,cde))
         val1 = subprocess.check_output('fslstats %s1.nii.gz -M'%(cde), shell = True)
         scalar.append(val1)
 

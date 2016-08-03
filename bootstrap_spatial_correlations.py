@@ -209,10 +209,72 @@ def voxelwise_analysis(scans,pv_vals,outfl,outdir,out_tp='r',nonpar=False,taskid
     nimg = ni.Nifti1Image(results,aff)
     ni.save(nimg,outstr)
 
+    # clean up
+    data = None
+    os.system('rm %s'%(os.path.join(outpth,'%s_*'%(cde))))
 
     return outstr
 
-def spatial_correlation_searchlight
+def spatial_correlation_searchlight_from_NIAK_GLMs(indir,cov_img,outdir,contrast,templ_str,scalestr='scale',norm=False,eff='t',poly=1,taskid=''):
+    '''
+    Given a directory containing a) NIAK glm.mat files at multiple scales, b) atlases at
+    the same resolutions, and a covariate image, this function will do the
+    following:
+        1) Convert covariate image to resolution of each atlas
+        2) Perform spatial correlations between a) average connectivity matrix
+        seed from every region at every scale, b) the covariance image
+        3) Output a dictionary summarizing the results, where key = resolution
+        and value = a dataframe containing statistics for each test
+
+
+    indir = path to directory containing NIAK glm.mat files and atlases.
+
+    cov_img = path to covariate image
+
+    outdir = path to desired output directory
+
+    contrast = label of the desired contrast to extract average connectivity
+    values from glm.mat file
+
+    templ_str = search string to locate atlases
+
+    scale_str = the string preceding the number indicating atlas resolution in
+    the glm and atlas pahts
+
+    norm = If set to a path, will normalize cov_img to target image that path
+    points to. Uses flirt with nearest neighbour interpolation.  If False, no
+    normalization will occur
+
+    eff = if set to 'r', will take values within the 'eff' structure of the
+    glm.mat file. If set to 't' will take values within the 'ttest' structure
+    of the glm.mat file
+
+    poly = If int > 1, results will include test statistics modeled with a
+    n-order polynomial, where n = poly
+
+    taskid = used to keep track of id in the case of multiple bootstrap samples
+    '''
+
+    cde = wr.codegen(6)
+
+    if norm:
+        print 'normalizing tmap to fmri space'
+        os.system('flirt -interp nearestneighbour -in %s -ref %s -out %s/%s_rtmap'%(cov_img,norm,outdir,cde))
+        cov_img = os.path.join(outdir,'%s_rtmap.nii.gz'(cde))
+
+    glmz = glob(os.path.join(indir,'*glm.mat')
+    dfz = {}
+    for glm in glmz:
+    ####################the 2 lines below sucks######################
+        scale = int(os.path.split(glm)[1].rsplit('_%s'%(scalestr))[1].rsplit('.')[0]))
+        scale_templ = glob(os.path.join(indir,'%s*%s*'%(templ_str,scale))
+        df, rdf, scalar = wr.get_parcelwise_correlation_map_from_glm_file(outdir,glm,scale_templ,scale,contrast,eff=eff,cov_msk='',cov_img=cov_img,conndf = '',poly=poly)
+        cdfz.update({scale: rdf})
+
+    try:
+        os.system('rm %s'%(os.path.join(outdir,'%s_*'%(cde))))
+
+    return cdfz
 
 #def id_sig_results
 

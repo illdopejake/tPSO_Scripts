@@ -163,7 +163,7 @@ def voxelwise_analysis(scans,pv_vals,outfl,outdir,out_tp='r',nonpar=False,taskid
         if parallel:
             for ind,scan in scans:
                 os.system('cp %s %s/%s_subject%s'%(scan,outpth,cde,ind))
-            scans = glob(os.path.join(outpth,'%s_*'%(cde))
+            scans = glob(os.path.join(outpth,'%s_*'%(cde)))
 
         if intermed:
             intfl = 'intfile%s'%(taskid)
@@ -208,6 +208,7 @@ def voxelwise_analysis(scans,pv_vals,outfl,outdir,out_tp='r',nonpar=False,taskid
     print 'writing image to %s'%(outstr)
     nimg = ni.Nifti1Image(results,aff)
     ni.save(nimg,outstr)
+    outstr = outstr+'.nii'
 
     # clean up
     data = None
@@ -215,7 +216,7 @@ def voxelwise_analysis(scans,pv_vals,outfl,outdir,out_tp='r',nonpar=False,taskid
 
     return outstr
 
-def spatial_correlation_searchlight_from_NIAK_GLMs(indir,cov_img,outdir,contrast,templ_str,scalestr='scale',norm=False,eff='t',poly=1,taskid=''):
+def spatial_correlation_searchlight_from_NIAK_GLMs(indir,cov_img,outdir,contrast,templ_str,scalestr='scale',norm=False,eff='t',poly=1,taskid='',save=False):
     '''
     Given a directory containing a) NIAK glm.mat files at multiple scales, b) atlases at
     the same resolutions, and a covariate image, this function will do the
@@ -253,6 +254,9 @@ def spatial_correlation_searchlight_from_NIAK_GLMs(indir,cov_img,outdir,contrast
     n-order polynomial, where n = poly
 
     taskid = used to keep track of id in the case of multiple bootstrap samples
+
+    save = If set to a string, will write results from each resolution to a spreadsheet
+    with a file name indicated be string input
     '''
 
     cde = wr.codegen(6)
@@ -260,22 +264,265 @@ def spatial_correlation_searchlight_from_NIAK_GLMs(indir,cov_img,outdir,contrast
     if norm:
         print 'normalizing tmap to fmri space'
         os.system('flirt -interp nearestneighbour -in %s -ref %s -out %s/%s_rtmap'%(cov_img,norm,outdir,cde))
-        cov_img = os.path.join(outdir,'%s_rtmap.nii.gz'(cde))
+        cov_img = os.path.join(outdir,'%s_rtmap.nii.gz'%(cde))
 
-    glmz = glob(os.path.join(indir,'*glm.mat')
+    glmz = glob(os.path.join(indir,'glm*.mat'))
     dfz = {}
     for glm in glmz:
-    ####################the 2 lines below sucks######################
-        scale = int(os.path.split(glm)[1].rsplit('_%s'%(scalestr))[1].rsplit('.')[0]))
-        scale_templ = glob(os.path.join(indir,'%s*%s*'%(templ_str,scale))
+    ####################the 2 lines below suck######################
+        scale = int(os.path.split(glm)[1].rsplit('_%s'%(scalestr))[1].rsplit('.')[0])
+        scale_templ = glob(os.path.join(indir,'%s*%s.*'%(templ_str,scale)))[0]
         df, rdf, scalar = wr.get_parcelwise_correlation_map_from_glm_file(outdir,glm,scale_templ,scale,contrast,eff=eff,cov_msk='',cov_img=cov_img,conndf = '',poly=poly)
-        cdfz.update({scale: rdf})
+        dfz.update({scale: rdf})
+        if save:
+            rdf.to_excel(os.path.join(outdir,'%s_scl%s_res.xls'%(save,scale)))
 
-    try:
-        os.system('rm %s'%(os.path.join(outdir,'%s_*'%(cde))))
+    resdf = pandas.DataFrame(columns =['scale','parcel','measure','value','pvalue'])
+    os.system('rm %s'%(os.path.join(outdir,'%s_*'%(cde))))
 
-    return cdfz
+    return dfz
 
-#def id_sig_results
+def id_sig_results(dfz,outdir,outfl,perc_thr=False,thr_tp='fwe',thr='',out_tp='samp',res_tp='all',master_ss=False,master_thr='',taskid=''):
+    '''given a dict outputted from the searchlight funcion, and thresholding
+    information, this function will save the top results from the searchlight
+    into a run specific spreadsheet and/or a master spreadsheet (across
+    bootstrap samples)
 
+    dfz = a dict outputted from the searchlight function where the key is atlas
+    resolution and value is a specific dataframe of results
+
+    outdir = the desired output directory
+
+    outfl = the name of the  output file (NOTE: taskid will be
+    automatically appended to this)
+
+    perc_thr: 'perc' = set threshold by top percentage of values (values determined by thr_tp)
+              'top' = keep on the top result (value determined by res_tp)
+              'fwe' = threshold based on # of comparisons (bonferonni)
+
+    out_tp =  'samp' = only create output spreadsheet for the input
+              'mast' = only write results to a master spreadsheet
+              'both' = do both
+
+    thr_tp =  'p' = set threshold by pvalue
+              'r' = set threshold by test statistic
+              'rabs' = set threshold by absolute value of test statistic'
+
+    thr = desired significance threshold if thr_tp set to 'p','r', or if perc_thr set to 'perc'
+
+    res_tp =  'r' = only report values from standard pearson r results
+              'rho' = only report values from spearman r results
+              'poly' = only report values from polynomial results
+              'all' = report values from all three types of tests
+
+    master_ss = path to the master spreadsheet. If no path is given, a master
+    spreadsheet will be created. Will be ignored if out_tp is set to 'samp'
+
+    master_thr = threshold for master spreadsheet results. If blank, will use
+    value from thr. Will be ignored if out_to set to 'samp'. NOTE: master_thr
+    MUST be equal to or more conservative than thr
+
+    taskid = used to keep track of id in the case of multiple bootstrap samples
+
+    WARNING: To avoid giant files and potentially breaking things, consider
+    setting thr to very conservative stats, especially if res_tp = 'all'. Even
+    'fwe' will often yield >5% of results significant. Using perc and low
+    values, or r and a high thr, is recommended.
+
+    NOTE: Function does not currently support searching for results smaller
+    than a given statistic. i.e. if thr_tp and res_tp are both set to 'r', the
+    functions can not search for results LESS THAN r, only greater. But see
+    'rabs' option for thr_tp.
+    '''
+
+    # check inputs
+    acc_vals = ['r','rho','poly', 'all']
+    if res_tp not in acc_vals:
+        raise ValueError('res_tp must be set to an appropriate value: r. rho, poly, or all. See documentation for id_sig_results for help ')
+    acc_vals = ['samp','mast','both']
+    if out_tp not in acc_vals:
+        raise ValueError('out_tp must be set to an appropriate value: samp, mast, or both. See documentation for id_sig_results for help')
+    acc_vals = ['p','r','rabs']
+    if thr_tp not in acc_vals:
+        raise ValueError('res_tp must be set to an appropriate value: p, r, or rabs. See documentation for id_sig_results for help')
+    if perc_thr:
+        acc_vals = ['perc','top','fwe']
+        if perc_thr not in acc_vals:
+            raise ValueError('perc_thr must be set to an appropriate value: perc,top,or fwe, or should be set to False. See documentation for id_sig_results for help')
+    # wrangle spreadsheets
+
+    resdf = pandas.DataFrame(columns =['scale','parcel','measure','value','pvalue'])
+
+    if out_tp != 'samp':
+        if os.path.isfile(master_ss):
+            if master_ss[-3:] == 'xls' or master_ss[-4:] == 'xlsx':
+                mdf = pandas.ExcelFile(master_ss).parse('Sheet1')
+            elif master_ss[-3:] == 'csv':
+                mdf = pandas.read_csv(master_ss)
+            else:
+                raise IOError('input spreadsheet filetype not recognized')
+        else:
+            master_ss = os.path.join(outdir,'master_ss.xls')
+            print 'no master_ss found. Creating new master_ss at %s'%(master_ss)
+            mdf = pandas.DataFrame()
+
+    # determine thresholds    
+    if out_tp != 'samp':
+        if master_thr == '':
+            master_thr = thr
+
+        if thr_tp == 'r' or thr_tp == 'rabs':
+            if master_thr < thr:
+                raise ValueError('master_thr must be more conservative than thr')
+        else:
+            if master_thr > thr:
+                raise ValueError('master_thr must be more conservative than thr')
+
+    res_dict = {'r': 0, 'rho': 2, 'poly': 4}
+
+    if perc_thr:
+        comps = 0
+        for scl,scf in dfz.iteritems():
+            comps = comps + len(scf)
+        if res_tp = 'all':
+            comps = comps * 3
+
+        if perc_thr == 'fwe':
+            thr = (0.05/comps)
+            print '%s total comparisons. Setting pvalue threshold to %s'%(comps,thr)
+        else:
+            vec = []
+            for scl,scf in dfz.iteritems():
+                for x,y in scf.iterrows():
+                    if thr_tp == 'p'
+                        if res_tp != 'all': 
+                            vec.append(y[res_dict['res_tp']+1])
+                        else:
+                            for k,v in res_dict.iteritems():
+                                vec.append(y[v+1])
+                    elif thr_tp == 'r' or thr_tp == 'rabs':
+                        if res_tp != 'all':
+                            vec.append(y[res_dict['res_tp'])
+                        else:
+                            for k,v in res_dict.iteritems():
+                                vec.append(y[v])
+
+            if perc_thr == 'top':
+                print 'acquiring top result'
+                if res_tp == 'p':
+                    thr = sorted(vec)[0]
+                elif res_tp == 'r' or res_tp == 'rabs':
+                    thr = sorted(vec)[-1]
+            else:
+                frac = int(comps * thr)
+                if res_tp == 'p':
+                    thr = sorted(vec)[frac]
+                    print 'acquiring top results, r > %s'%(thr)
+                else:
+                    thr = sorted(vec)[-(frac+1)]
+                    print 'acquiring top results, p < %s'%(thr)
+    res_count = 0
+    for scl,scf in dfz.iteritems():
+        for x,y in sdf.iterrows():
+            if thr_tp == 'p'
+                if res_tp != 'all':
+                    if y[(res_dict[res_tp]) + 1] < thr:
+                        update_spreadsheet(resdf,scl,x,y,res_tp)
+                        if out_tp != 'samp':
+                            if master_thr == thr:
+                                update_spreadsheet(resdf,scl,x,y,res_tp,v='',df_tp='mast',res_count=res_count,taskid=taskid)
+                            else:
+                                if y[(res_dict[res_tp]) + 1] < master_thr
+                                    update_spreadsheet(resdf,scl,x,y,res_tp,v='',df_tp='mast',res_count=res_count,taskid=taskid)
+                else:
+                    for k,v in res_dict.iteritems():
+                        if y[v+1] < thr:
+                            update_spreadsheet(resdf,scl,x,y,res_tp,v=v)
+                                if out_tp != 'samp':
+                                    if master_thr == thr:
+                                        update_spreadsheet(resdf,scl,x,y,res_tp,v=v,df_tp='mast',res_count=res_count,taskid=taskid)
+                                    else:
+                                        if y[v+1] < master_thr:
+                                            update_spreadsheet(resdf,scl,x,y,res_tp,v=v,df_tp='mast',res_count=res_count,taskid=taskid)
+            else:
+                if res_tp != 'all':
+                    if thr_tp == 'rabs':
+                        if abs(y[(res_dict[res_tp])) > thr:
+                            update_spreadsheet(resdf,scl,x,y,res_tp)
+                            if out_tp != 'samp':
+                                if master_thr == thr:
+                                    update_spreadsheet(resdf,scl,x,y,res_tp,v='',df_tp='mast'.res_count=res_count,taskid=taskid)
+                                else:
+                                    if abs(y[(res_dict[res_tp])) > thr:
+                                        update_spreadsheet(resdf,scl,x,y,res_tp,v='',df_tp='mast'.res_count=res_count,taskid=taskid)
+                    else:
+                        if y[(res_dict[res_tp]) > thr:
+                            update_spreadsheet(resdf,scl,x,y,res_tp)
+                            if out_tp != 'samp':
+                                if master_thr == thr:
+                                    update_spreadsheet(resdf,scl,x,y,res_tp,v='',df_tp='mast'.res_count=res_count,taskid=taskid)
+                                else:
+                                    if y[(res_dict[res_tp]) > thr:
+                                        update_spreadsheet(resdf,scl,x,y,res_tp,v='',df_tp='mast'.res_count=res_count,taskid=taskid)
+                else:
+                    for k,v in res_dict.iteritems():
+                        if thr_tp == 'rabs':
+                            if abs(y[v+1]) > thr:
+                                update_spreadsheet(resdf,scl,x,y,res_tp,v=v)
+                                if out_tp != 'samp':
+                                    if master_thr == thr:
+                                        update_spreadsheet(resdf,scl,x,y,res_tp,v=v,df_tp='mast',res_count=res_count,taskid=taskid)
+                                    else:
+                                        if abs(y[v+1]) > thr:
+                                            update_spreadsheet(resdf,scl,x,y,res_tp,v=v,df_tp='mast',res_count=res_count,taskid=taskid)
+                        else:
+                            if y[v+1] > thr:
+                                update_spreadsheet(resdf,scl,x,y,res_tp,v=v)
+                                if out_tp != 'samp':
+                                    if master_thr == thr:
+                                        update_spreadsheet(resdf,scl,x,y,res_tp,v=v,df_tp='mast',res_count=res_count,taskid=taskid)
+                                    else:
+                                        if y[v+1] > thr:
+                                            update_spreadsheet(resdf,scl,x,y,res_tp,v=v,df_tp='mast',res_count=res_count,taskid=taskid)
+
+    if out_tp != 'mast':
+        outstr = os.path.join(outdir,'%s%s.xls'%(outfl,taskid))
+        print 'writing results to spreadsheet at %s'%(outstr)
+        resdf.to_excel(outstr)
+
+    if out_tp != 'samp':
+        print 'writing results to master spreadsheet at %s'%(master_ss)
+        mdf.to_excel(master_ss)
+
+def update_spreadsheet(indf,scl,x,y,res_tp,v='',df_tp='samp',res_count=0,taskid=''):
+    '''update spreadsheet with values indexed specifically from searchlight
+    generated spreadsheet'''
+
+    res_dict = {'r': 0, 'rho': 2, 'poly': 4}
+
+    if df_tp == 'samp':
+        if res_tp == 'all':
+            indf.ix['%s: %s'%(scl,x), 'value'] = y[v]
+            indf.ix['%s: %s'%(scl,x), 'pvalue'] = y[v+1]
+        else:
+            indf.ix['%s: %s'%(scl,x), 'value'] = y[res_dict[res_tp]]
+            indf.ix['%s: %s'%(scl,x), 'pvalue'] = y[res_dict[res_tp]+1]
+        indf.ix['%s: %s'%(scl,x), 'scale'] = scl
+        indf.ix['%s: %s'%(scl,x), 'parcel'] = x
+        indf.ix['%s: %s'%(scl,x), 'measure'] = res_tp
+
+
+    elif df_tp == 'mast':
+        indf.ix['samp_%s'%(taskid),'res%s_scale'%(res_count)] = scl
+        indf.ix['samp_%s'%(taskid),'res%s_parcel'%(res_count)] = x
+        indf.ix['samp_%s'%(taskid),'res%s_measure'%(res_count)] = res_tp
+        if res_tp == 'all':
+            indf.ix['samp_%s'%(taskid),'res%s_value'%(res_count)] = y[v]
+            indf.ix['samp_%s'%(taskid),'res%s_pvalue'%(res_count)] =y[v+1]
+        else:
+            indf.ix['samp_%s'%(taskid),'res%s_value'%(res_count)] = y[res_dict[res_tp]]
+            indf.ix['samp_%s'%(taskid),'res%s_pvalue'%(res_count)] = y[res_dict[res_tp]+1]
+        res_count = res_count + 1
+
+        return res_count
 #def replicate_previous_findings

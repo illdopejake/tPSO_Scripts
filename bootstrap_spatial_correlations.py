@@ -7,7 +7,7 @@ import nibabel as ni
 import scipy.stats.stats as st
 import propagation_correlations as wr
 
-def define_bootstrap_sample(ss,subcol,subpth,pv,sample_perc=0.5,num_gps=3,taskid = ''):
+def define_bootstrap_sample(ss,subcol,subpth,pv,outpth,sample_perc=0.5,num_gps=3,par=False,taskid = ''):
     """takes an existing sample of subjects from a spreadsheet and creates a
     subsample, balanced by a variable. Outputs a subsamble membership txt file and
     a list of paths corresponding to subsample member scans)
@@ -21,6 +21,8 @@ def define_bootstrap_sample(ss,subcol,subpth,pv,sample_perc=0.5,num_gps=3,taskid
 
     subpth = a path pointing to the directory containing subject scans
 
+    outpth = desired output directory
+
     pv = string corresponding to the label of the column containing values for the
     predictor variable
 
@@ -30,7 +32,13 @@ def define_bootstrap_sample(ss,subcol,subpth,pv,sample_perc=0.5,num_gps=3,taskid
     num_gps = the number of groups used to balance subsample on predictor variable.
     Defualt is 3. Value must be int
 
+    par = if True, makes compatible for command line based parallelization
+
     task_id = used to keep track of id in the case of multiple bootstrap samples
+
+
+    Outputs a list of paths and a vector containing the values for the
+    predictor variable
 
     ***IMPORTANT NOTE***
     Script has the following assumptions:
@@ -102,12 +110,16 @@ def define_bootstrap_sample(ss,subcol,subpth,pv,sample_perc=0.5,num_gps=3,taskid
     # make membership record
     ndf = pandas.DataFrame(index=subsamp)
     if len(taskid) > 0:
-        ndf.to_csv('%s_subsample_membership'%(taskid))
+        ndf.to_csv(os.path.join(outpth,'%s_subsample_membership'%(taskid)))
     else:
         cde = wr.codegen(6)
-        ndf.to_csv('%s_subsample_membership'%(cde))
+        ndf.to_csv(os.path.join(outpth,'%s_subsample_membership'%(cde)))
 
-    return scans, pv_vals
+    if par:
+        flpth = parallel_out('dbs',outpth,scans,pv_vals)
+        return scans,pvvals,flpth
+    else:
+        return scans, pv_vals
 
 #def generate_RSNs_for_subsample
 
@@ -118,7 +130,7 @@ def convert_r2t(r,samp_df):
 
     return t
 
-def voxelwise_analysis(scans,pv_vals,outfl,outdir,out_tp='r',nonpar=False,taskid='',parallel=False,indata=False,intermed=False):
+def voxelwise_analysis(scans,pv_vals,outfl,outdir,out_tp='r',nonpar=False,taskid='',parallel=False,parin='',indata=False,intermed=False):
     """Given a list of 3D volumes and a corresponding list of values for a
     predictor variable, run voxelwise correlations.
 
@@ -142,10 +154,17 @@ def voxelwise_analysis(scans,pv_vals,outfl,outdir,out_tp='r',nonpar=False,taskid
     taskid = used to keep track of id in the case of multiple bootstap samples
 
     parallel = if true, script will copy scans into working directory to allow
-    for multiple concurrent processes.
+    for multiple concurrent processes. Will also make script compatible for
+    command line based parallelization.
+
+    parin = input path for parallelization
 
     intermed = if true, script will not delete the 4D volume used to run the
     voxelwise analysis
+
+
+    Outputs a path pointing to the newly created tmap
+
 
     WARNING: As of now, this script is extremely computationally intensive for
     a local machine. Running a subsample of 135 subjects required 5 GB memory,
@@ -161,9 +180,7 @@ def voxelwise_analysis(scans,pv_vals,outfl,outdir,out_tp='r',nonpar=False,taskid
         data = indata
     else:
         if parallel:
-            for ind,scan in scans:
-                os.system('cp %s %s/%s_subject%s'%(scan,outpth,cde,ind))
-            scans = glob(os.path.join(outpth,'%s_*'%(cde)))
+            scans,pv_vals = parallel_in('va',outdir,parin,cde)
 
         if intermed:
             intfl = 'intfile%s'%(taskid)
@@ -256,7 +273,11 @@ def spatial_correlation_searchlight_from_NIAK_GLMs(indir,cov_img,outdir,contrast
     taskid = used to keep track of id in the case of multiple bootstrap samples
 
     save = If set to a string, will write results from each resolution to a spreadsheet
-    with a file name indicated be string input
+    with a file name indicated by string input
+
+
+    Outputs a dict where the key is scale and the value is a dataframe
+    containing results at that scale
     '''
 
     cde = wr.codegen(6)
@@ -282,7 +303,7 @@ def spatial_correlation_searchlight_from_NIAK_GLMs(indir,cov_img,outdir,contrast
 
     return dfz
 
-def id_sig_results(dfz,outdir,outfl,perc_thr='top',thr_tp='r',thr='',out_tp='samp',res_tp='all',master_ss=False,master_thr='',taskid=''):
+def id_sig_results(dfz,outdir,outfl,perc_thr='top',thr_tp='r',thr='',out_tp='samp',res_tp='all',master_ss=False,master_thr='',par=False,taskid=''):
     '''given a dict outputted from the searchlight funcion, and thresholding
     information, this function will save the top results from the searchlight
     into a run specific spreadsheet and/or a master spreadsheet (across
@@ -322,6 +343,10 @@ def id_sig_results(dfz,outdir,outfl,perc_thr='top',thr_tp='r',thr='',out_tp='sam
     value from thr. Will be ignored if out_to set to 'samp'. NOTE: master_thr
     MUST be equal to or more conservative than thr
 
+    par = If set to the same string as save from the searchlight function, will
+    import results spreadsheets generated from searchlight, and will make
+    script compatible for command-line based parallelization
+
     taskid = used to keep track of id in the case of multiple bootstrap samples
 
     WARNING: To avoid giant files and potentially breaking things, consider
@@ -352,13 +377,16 @@ def id_sig_results(dfz,outdir,outfl,perc_thr='top',thr_tp='r',thr='',out_tp='sam
     if not perc_thr:
         if type(thr) != int and type(thr) != float:
             raise ValueError('thr must be an int or float, unless perc_thr is True')
-        if thr > 1: 
+        if thr > 1:
             raise ValueError('invalid value set for thr')
     if perc_thr == 'fwe' and thr_tp != 'p':
         print 'WARNING: because perc_thr set to fwe, change thr_tp to p...'
         thr_tp = 'p'
 
     # wrangle spreadsheets
+
+    if par:
+        dfz = parallel_in('ids',outdir,par)
 
     resdf = pandas.DataFrame(columns =['scale','parcel','measure','value','pvalue'])
 
@@ -549,4 +577,38 @@ def update_spreadsheet(indf,scl,x,y,res_tp,v='',df_tp='samp',res_count=0,taskid=
         res_count = res_count + 1
 
         return res_count
-#def replicate_previous_findings
+
+def parallel_in(func,outdir,ipt1,ipt2):
+
+    if func == 'va':
+        idf = pandas.ExcelFile(ipt1).parse('Sheet1')
+        scans = idf.index.tolist()
+        pv_vals = idf[:]['pv_vals'].tolist()
+
+        for ind,scan in enumerate(scans):
+            os.system('cp %s %s/%s_subject%s'%(scan,outdir,ipt2,ind))
+            scans = glob(os.path.join(outpth,'%s_*'%(ipt2)))
+
+    return scans,pv_vals
+
+    if func == 'isr':
+        dfz = {}
+        ssz = glob(os.path.join(outdir,'%s*_res.xls'%(ipt1)))
+        for ss in ssz:
+            scl = os.path.split(ss)[1].rsplit('_')[1].rsplit('scl')[1]
+            ndf = pandas.ExcelFile(ss).parse('Sheet1')
+            dfz.update({scl: ndf})
+
+    return dfz
+
+def parallel_out(func,outdir,opt1,opt2):
+
+    if func == 'dbc':
+        odf = pandas.DataFrame(index = opt1,columns = ['pv_vals'])
+        for i,sub in enumerate(odf.index.tolist()):
+            odf.ix[sub,'pv_vals'] = opt2[i]
+
+    flpth = os.path.join(outdir,'dbc_out.xls')
+    odf.to_excel(flpth)
+
+    return flpth

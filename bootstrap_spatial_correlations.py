@@ -282,7 +282,7 @@ def spatial_correlation_searchlight_from_NIAK_GLMs(indir,cov_img,outdir,contrast
 
     return dfz
 
-def id_sig_results(dfz,outdir,outfl,perc_thr=False,thr_tp='fwe',thr='',out_tp='samp',res_tp='all',master_ss=False,master_thr='',taskid=''):
+def id_sig_results(dfz,outdir,outfl,perc_thr='top',thr_tp='r',thr='',out_tp='samp',res_tp='all',master_ss=False,master_thr='',taskid=''):
     '''given a dict outputted from the searchlight funcion, and thresholding
     information, this function will save the top results from the searchlight
     into a run specific spreadsheet and/or a master spreadsheet (across
@@ -349,6 +349,15 @@ def id_sig_results(dfz,outdir,outfl,perc_thr=False,thr_tp='fwe',thr='',out_tp='s
         acc_vals = ['perc','top','fwe']
         if perc_thr not in acc_vals:
             raise ValueError('perc_thr must be set to an appropriate value: perc,top,or fwe, or should be set to False. See documentation for id_sig_results for help')
+    if not perc_thr:
+        if type(thr) != int and type(thr) != float:
+            raise ValueError('thr must be an int or float, unless perc_thr is True')
+        if thr > 1: 
+            raise ValueError('invalid value set for thr')
+    if perc_thr == 'fwe' and thr_tp != 'p':
+        print 'WARNING: because perc_thr set to fwe, change thr_tp to p...'
+        thr_tp = 'p'
+
     # wrangle spreadsheets
 
     resdf = pandas.DataFrame(columns =['scale','parcel','measure','value','pvalue'])
@@ -384,7 +393,7 @@ def id_sig_results(dfz,outdir,outfl,perc_thr=False,thr_tp='fwe',thr='',out_tp='s
         comps = 0
         for scl,scf in dfz.iteritems():
             comps = comps + len(scf)
-        if res_tp = 'all':
+        if res_tp == 'all':
             comps = comps * 3
 
         if perc_thr == 'fwe':
@@ -394,96 +403,100 @@ def id_sig_results(dfz,outdir,outfl,perc_thr=False,thr_tp='fwe',thr='',out_tp='s
             vec = []
             for scl,scf in dfz.iteritems():
                 for x,y in scf.iterrows():
-                    if thr_tp == 'p'
-                        if res_tp != 'all': 
-                            vec.append(y[res_dict['res_tp']+1])
+                    if thr_tp == 'p':
+                        if res_tp != 'all':
+                            vec.append(y[res_dict[res_tp]+1])
                         else:
                             for k,v in res_dict.iteritems():
                                 vec.append(y[v+1])
                     elif thr_tp == 'r' or thr_tp == 'rabs':
                         if res_tp != 'all':
-                            vec.append(y[res_dict['res_tp'])
+                            vec.append(y[res_dict[res_tp]])
                         else:
                             for k,v in res_dict.iteritems():
                                 vec.append(y[v])
 
             if perc_thr == 'top':
                 print 'acquiring top result'
-                if res_tp == 'p':
-                    thr = sorted(vec)[0]
-                elif res_tp == 'r' or res_tp == 'rabs':
-                    thr = sorted(vec)[-1]
+                if thr_tp == 'p':
+                    thr = sorted(vec)[1]
+                elif thr_tp == 'r' or thr_tp == 'rabs':
+                    thr = sorted(vec)[-2]
             else:
                 frac = int(comps * thr)
-                if res_tp == 'p':
+                if thr_tp == 'p':
                     thr = sorted(vec)[frac]
-                    print 'acquiring top results, r > %s'%(thr)
+                    print 'acquiring top results, p < %s'%(thr)
                 else:
                     thr = sorted(vec)[-(frac+1)]
-                    print 'acquiring top results, p < %s'%(thr)
+                    print 'acquiring top results, r > %s'%(thr)
+
+    # Extract results
     res_count = 0
     for scl,scf in dfz.iteritems():
-        for x,y in sdf.iterrows():
-            if thr_tp == 'p'
+        for x,y in scf.iterrows():
+            if thr_tp == 'p':
                 if res_tp != 'all':
                     if y[(res_dict[res_tp]) + 1] < thr:
                         update_spreadsheet(resdf,scl,x,y,res_tp)
                         if out_tp != 'samp':
                             if master_thr == thr:
-                                update_spreadsheet(resdf,scl,x,y,res_tp,v='',df_tp='mast',res_count=res_count,taskid=taskid)
+                                res_count=update_spreadsheet(resdf,scl,x,y,res_tp,v='',df_tp='mast',res_count=res_count,taskid=taskid)
                             else:
-                                if y[(res_dict[res_tp]) + 1] < master_thr
-                                    update_spreadsheet(resdf,scl,x,y,res_tp,v='',df_tp='mast',res_count=res_count,taskid=taskid)
+                                if y[(res_dict[res_tp]) + 1] < master_thr:
+                                    res_count=update_spreadsheet(resdf,scl,x,y,res_tp,v='',df_tp='mast',res_count=res_count,taskid=taskid)
                 else:
                     for k,v in res_dict.iteritems():
                         if y[v+1] < thr:
                             update_spreadsheet(resdf,scl,x,y,res_tp,v=v)
-                                if out_tp != 'samp':
-                                    if master_thr == thr:
-                                        update_spreadsheet(resdf,scl,x,y,res_tp,v=v,df_tp='mast',res_count=res_count,taskid=taskid)
-                                    else:
-                                        if y[v+1] < master_thr:
-                                            update_spreadsheet(resdf,scl,x,y,res_tp,v=v,df_tp='mast',res_count=res_count,taskid=taskid)
+                            if out_tp != 'samp':
+                                if master_thr == thr:
+                                    res_count=update_spreadsheet(resdf,scl,x,y,res_tp,v=v,df_tp='mast',res_count=res_count,taskid=taskid)
+                                else:
+                                    if y[v+1] < master_thr:
+                                        res_count=update_spreadsheet(resdf,scl,x,y,res_tp,v=v,df_tp='mast',res_count=res_count,taskid=taskid)
             else:
                 if res_tp != 'all':
                     if thr_tp == 'rabs':
-                        if abs(y[(res_dict[res_tp])) > thr:
+                        if abs(y[(res_dict[res_tp])]) > thr:
                             update_spreadsheet(resdf,scl,x,y,res_tp)
                             if out_tp != 'samp':
                                 if master_thr == thr:
-                                    update_spreadsheet(resdf,scl,x,y,res_tp,v='',df_tp='mast'.res_count=res_count,taskid=taskid)
+                                    res_count=update_spreadsheet(resdf,scl,x,y,res_tp,v='',df_tp='mast',res_count=res_count,taskid=taskid)
                                 else:
-                                    if abs(y[(res_dict[res_tp])) > thr:
-                                        update_spreadsheet(resdf,scl,x,y,res_tp,v='',df_tp='mast'.res_count=res_count,taskid=taskid)
+                                    if abs(y[(res_dict[res_tp])]) > thr:
+                                        res_count=update_spreadsheet(resdf,scl,x,y,res_tp,v='',df_tp='mast',res_count=res_count,taskid=taskid)
                     else:
-                        if y[(res_dict[res_tp]) > thr:
+                        if y[(res_dict[res_tp])] > thr:
                             update_spreadsheet(resdf,scl,x,y,res_tp)
                             if out_tp != 'samp':
                                 if master_thr == thr:
-                                    update_spreadsheet(resdf,scl,x,y,res_tp,v='',df_tp='mast'.res_count=res_count,taskid=taskid)
+                                    res_count=update_spreadsheet(resdf,scl,x,y,res_tp,v='',df_tp='mast',res_count=res_count,taskid=taskid)
                                 else:
-                                    if y[(res_dict[res_tp]) > thr:
-                                        update_spreadsheet(resdf,scl,x,y,res_tp,v='',df_tp='mast'.res_count=res_count,taskid=taskid)
+                                    if y[(res_dict[res_tp])] > thr:
+                                        res_count=update_spreadsheet(resdf,scl,x,y,res_tp,v='',df_tp='mast',res_count=res_count,taskid=taskid)
                 else:
                     for k,v in res_dict.iteritems():
                         if thr_tp == 'rabs':
-                            if abs(y[v+1]) > thr:
+                            if abs(y[v]) > thr:
                                 update_spreadsheet(resdf,scl,x,y,res_tp,v=v)
                                 if out_tp != 'samp':
                                     if master_thr == thr:
-                                        update_spreadsheet(resdf,scl,x,y,res_tp,v=v,df_tp='mast',res_count=res_count,taskid=taskid)
+                                        res_count=update_spreadsheet(resdf,scl,x,y,res_tp,v=v,df_tp='mast',res_count=res_count,taskid=taskid)
                                     else:
-                                        if abs(y[v+1]) > thr:
-                                            update_spreadsheet(resdf,scl,x,y,res_tp,v=v,df_tp='mast',res_count=res_count,taskid=taskid)
+                                        if abs(y[v]) > thr:
+                                            res_count=update_spreadsheet(resdf,scl,x,y,res_tp,v=v,df_tp='mast',res_count=res_count,taskid=taskid)
                         else:
-                            if y[v+1] > thr:
+                            if y[v] > thr:
                                 update_spreadsheet(resdf,scl,x,y,res_tp,v=v)
                                 if out_tp != 'samp':
                                     if master_thr == thr:
-                                        update_spreadsheet(resdf,scl,x,y,res_tp,v=v,df_tp='mast',res_count=res_count,taskid=taskid)
+                                        res_count=update_spreadsheet(resdf,scl,x,y,res_tp,v=v,df_tp='mast',res_count=res_count,taskid=taskid)
                                     else:
-                                        if y[v+1] > thr:
-                                            update_spreadsheet(resdf,scl,x,y,res_tp,v=v,df_tp='mast',res_count=res_count,taskid=taskid)
+                                        if y[v] > thr:
+                                            res_count=update_spreadsheet(resdf,scl,x,y,res_tp,v=v,df_tp='mast',res_count=res_count,taskid=taskid)
+
+    # save results
 
     if out_tp != 'mast':
         outstr = os.path.join(outdir,'%s%s.xls'%(outfl,taskid))
@@ -501,27 +514,38 @@ def update_spreadsheet(indf,scl,x,y,res_tp,v='',df_tp='samp',res_count=0,taskid=
     res_dict = {'r': 0, 'rho': 2, 'poly': 4}
 
     if df_tp == 'samp':
-        if res_tp == 'all':
-            indf.ix['%s: %s'%(scl,x), 'value'] = y[v]
-            indf.ix['%s: %s'%(scl,x), 'pvalue'] = y[v+1]
-        else:
-            indf.ix['%s: %s'%(scl,x), 'value'] = y[res_dict[res_tp]]
-            indf.ix['%s: %s'%(scl,x), 'pvalue'] = y[res_dict[res_tp]+1]
-        indf.ix['%s: %s'%(scl,x), 'scale'] = scl
-        indf.ix['%s: %s'%(scl,x), 'parcel'] = x
-        indf.ix['%s: %s'%(scl,x), 'measure'] = res_tp
+        ind = '%s: %s'%(scl,x)
+        cnt = 0
+        if ind in indf.index.tolist():
+            nind = ind
+            while nind in indf.index.tolist():
+                cnt = cnt+1
+                nind = '%s_%s'%(ind,cnt)
+            ind = nind
 
+    if df_tp == 'samp':
+        if res_tp == 'all':
+            indf.ix[ind, 'value'] = y[v]
+            indf.ix[ind, 'pvalue'] = y[v+1]
+            indf.ix[ind, 'measure'] = res_dict.keys()[res_dict.values().index(v)]
+        else:
+            indf.ix[ind, 'value'] = y[res_dict[res_tp]]
+            indf.ix[ind, 'pvalue'] = y[res_dict[res_tp]+1]
+            indf.ix[ind, 'measure'] = res_tp
+        indf.ix[ind, 'scale'] = scl
+        indf.ix[ind, 'parcel'] = x
 
     elif df_tp == 'mast':
         indf.ix['samp_%s'%(taskid),'res%s_scale'%(res_count)] = scl
         indf.ix['samp_%s'%(taskid),'res%s_parcel'%(res_count)] = x
-        indf.ix['samp_%s'%(taskid),'res%s_measure'%(res_count)] = res_tp
         if res_tp == 'all':
             indf.ix['samp_%s'%(taskid),'res%s_value'%(res_count)] = y[v]
-            indf.ix['samp_%s'%(taskid),'res%s_pvalue'%(res_count)] =y[v+1]
+            indf.ix['samp_%s'%(taskid),'res%s_pvalue'%(res_count)] = y[v+1]
+            indf.ix['samp_%s'%(taskid),'res%s_measure'%(res_count)] = res_dict.keys()[res_dict.values().index(v)]
         else:
             indf.ix['samp_%s'%(taskid),'res%s_value'%(res_count)] = y[res_dict[res_tp]]
             indf.ix['samp_%s'%(taskid),'res%s_pvalue'%(res_count)] = y[res_dict[res_tp]+1]
+            indf.ix['samp_%s'%(taskid),'res%s_measure'%(res_count)] = res_tp
         res_count = res_count + 1
 
         return res_count

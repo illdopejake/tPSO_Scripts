@@ -116,8 +116,8 @@ def define_bootstrap_sample(ss,subcol,subpth,pv,outpth,sample_perc=0.5,num_gps=3
         ndf.to_csv(os.path.join(outpth,'%s_subsample_membership'%(cde)))
 
     if par:
-        flpth = parallel_out('dbs',outpth,scans,pv_vals)
-        return scans,pvvals,flpth
+        flpth = parallel_out('dbc',outpth,scans,pv_vals,taskid)
+        return scans,pv_vals,flpth
     else:
         return scans, pv_vals
 
@@ -149,7 +149,8 @@ def voxelwise_analysis(scans,pv_vals,outfl,outdir,out_tp='r',nonpar=False,taskid
 
     nonpar = Set to True to set voxelwise analysis from pearson to spearman
 
-    indata = In case 4D data is already available in an existing variable
+    indata = In case 4D data is already available in an existing variable, data
+    can be specified here. Or, if an int file exists, simply add the path here.
 
     taskid = used to keep track of id in the case of multiple bootstap samples
 
@@ -176,12 +177,17 @@ def voxelwise_analysis(scans,pv_vals,outfl,outdir,out_tp='r',nonpar=False,taskid
 
     cde = wr.codegen(6)
 
-    if indata:
-        data = indata
-    else:
-        if parallel:
-            scans,pv_vals = parallel_in('va',outdir,parin,cde)
+    if parallel:
+        scans,pv_vals = parallel_in('va',outdir,parin,cde)
 
+    if indata:
+        if type(indata) != str:
+            data = indata
+        else:
+            if not parallel:
+                print 'loading data...'
+            data=ni.load(indata).get_data()
+    else:
         if intermed:
             intfl = 'intfile%s'%(taskid)
         else:
@@ -192,14 +198,17 @@ def voxelwise_analysis(scans,pv_vals,outfl,outdir,out_tp='r',nonpar=False,taskid
         for scn in scans:
             cmd = cmd+' %s'%(scn)
 
-        print 'creating input 4D volume...'
+        if not parallel:
+            print 'creating input 4D volume...'
         os.system(cmd)
 
-        print 'loading data'
-        data = ni.load(os.path.join(outdir,intfl)).get_data()
+        if not parallel:
+            print 'loading data'
+        data = ni.load(os.path.join(outdir,'%s.nii.gz'%(intfl))).get_data()
 
     # run voxelwise analysis
-    print 'beginning analysis...'
+    if not parallel:
+        print 'beginning analysis...'
     x,y,z,t_dim = data.shape
     results = np.zeros((x,y,z))
     aff = ni.load(scans[0]).affine
@@ -218,18 +227,20 @@ def voxelwise_analysis(scans,pv_vals,outfl,outdir,out_tp='r',nonpar=False,taskid
                     if out_tp == 't':
                         r = convert_r2t(r,t_dim)
                     results[xind,yind,zind] = r
-        print 'finished %s/%s job clusters'%(xind,x)
+        if not parallel:
+            print 'finished %s/%s job clusters'%(xind,x)
 
     # write image
     outstr = '%s%s'%(os.path.join(outdir,outfl),taskid)
-    print 'writing image to %s'%(outstr)
+    if not parallel:
+        print 'writing image to %s'%(outstr)
     nimg = ni.Nifti1Image(results,aff)
     ni.save(nimg,outstr)
     outstr = outstr+'.nii'
 
     # clean up
     data = None
-    os.system('rm %s'%(os.path.join(outpth,'%s_*'%(cde))))
+    os.system('rm %s'%(os.path.join(outdir,'%s_*'%(cde))))
 
     return outstr
 
@@ -256,7 +267,7 @@ def spatial_correlation_searchlight_from_NIAK_GLMs(indir,cov_img,outdir,contrast
 
     templ_str = search string to locate atlases
 
-    scale_str = the string preceding the number indicating atlas resolution in
+    scalestr = the string preceding the number indicating atlas resolution in
     the glm and atlas pahts
 
     norm = If set to a path, will normalize cov_img to target image that path
@@ -280,6 +291,15 @@ def spatial_correlation_searchlight_from_NIAK_GLMs(indir,cov_img,outdir,contrast
     containing results at that scale
     '''
 
+    if save:
+        if '_' in save:
+            print('WARNING: no _ aloud in save. Removing...')
+            nsave=''
+            jnk=save.rsplit('_')
+            for i in range(len(jnk)):
+                nsave=nsave+jnk[i]
+            save = nsave
+
     cde = wr.codegen(6)
 
     if norm:
@@ -296,14 +316,15 @@ def spatial_correlation_searchlight_from_NIAK_GLMs(indir,cov_img,outdir,contrast
         df, rdf, scalar = wr.get_parcelwise_correlation_map_from_glm_file(outdir,glm,scale_templ,scale,contrast,eff=eff,cov_msk='',cov_img=cov_img,conndf = '',poly=poly)
         dfz.update({scale: rdf})
         if save:
-            rdf.to_excel(os.path.join(outdir,'%s_scl%s_res.xls'%(save,scale)))
+            rdf.to_excel(os.path.join(outdir,'%s_scl%s_res%s.xls'%(save,scale,taskid)))
 
     resdf = pandas.DataFrame(columns =['scale','parcel','measure','value','pvalue'])
     os.system('rm %s'%(os.path.join(outdir,'%s_*'%(cde))))
 
     return dfz
 
-def id_sig_results(dfz,outdir,outfl,perc_thr='top',thr_tp='r',thr='',out_tp='samp',res_tp='all',master_ss=False,master_thr='',par=False,taskid=''):
+
+def id_sig_results(dfz,outdir,outfl='outfl',perc_thr='top',thr_tp='r',thr='',out_tp='samp',res_tp='all',master_ss=False,master_thr='',par=False,parsave=False,taskid=''):
     '''given a dict outputted from the searchlight funcion, and thresholding
     information, this function will save the top results from the searchlight
     into a run specific spreadsheet and/or a master spreadsheet (across
@@ -347,6 +368,9 @@ def id_sig_results(dfz,outdir,outfl,perc_thr='top',thr_tp='r',thr='',out_tp='sam
     import results spreadsheets generated from searchlight, and will make
     script compatible for command-line based parallelization
 
+    parsave = If true, will also save the spreadsheets imported using par.
+    otherwise, spreadsheets will be deleted to conserve space.
+
     taskid = used to keep track of id in the case of multiple bootstrap samples
 
     WARNING: To avoid giant files and potentially breaking things, consider
@@ -374,19 +398,27 @@ def id_sig_results(dfz,outdir,outfl,perc_thr='top',thr_tp='r',thr='',out_tp='sam
         acc_vals = ['perc','top','fwe']
         if perc_thr not in acc_vals:
             raise ValueError('perc_thr must be set to an appropriate value: perc,top,or fwe, or should be set to False. See documentation for id_sig_results for help')
-    if not perc_thr:
+    if perc_thr != 'fwe' and perc_thr != 'top':
         if type(thr) != int and type(thr) != float:
-            raise ValueError('thr must be an int or float, unless perc_thr is True')
+            if type(thr) == str:
+                try:
+                    thr=float(thr)
+                except:
+                    raise ValueError('thr must be an int or float, unless perc_thr is True')
+            else:
+                raise ValueError('thr must be an int or float, unless perc_thr is true')
         if thr > 1:
             raise ValueError('invalid value set for thr')
     if perc_thr == 'fwe' and thr_tp != 'p':
         print 'WARNING: because perc_thr set to fwe, change thr_tp to p...'
         thr_tp = 'p'
+    if out_tp != 'mast' and outfl=='outfl':
+        print 'WARNING: No outfile name specified. Using name %s%s'%(outfl,taskid)
 
     # wrangle spreadsheets
 
     if par:
-        dfz = parallel_in('ids',outdir,par)
+        dfz = parallel_in('isr',outdir,par,parsave,taskid)
 
     resdf = pandas.DataFrame(columns =['scale','parcel','measure','value','pvalue'])
 
@@ -402,6 +434,12 @@ def id_sig_results(dfz,outdir,outfl,perc_thr='top',thr_tp='r',thr='',out_tp='sam
             master_ss = os.path.join(outdir,'master_ss.xls')
             print 'no master_ss found. Creating new master_ss at %s'%(master_ss)
             mdf = pandas.DataFrame()
+
+    coltest = dfz[dfz.keys()[0]].columns.tolist()
+    if res_tp == 'rho' and 'rho' not in coltest:
+        raise IOError('res_tp set to rho but no nonparametric results available')
+    if res_tp == 'poly' and  len(coltest) < 8:
+        raise IOError('res_tp set to poly but no polynomial results available')
 
     # determine thresholds    
     if out_tp != 'samp':
@@ -452,6 +490,8 @@ def id_sig_results(dfz,outdir,outfl,perc_thr='top',thr_tp='r',thr='',out_tp='sam
                     thr = sorted(vec)[-2]
             else:
                 frac = int(comps * thr)
+                if frac==0:
+                    frac=1
                 if thr_tp == 'p':
                     thr = sorted(vec)[frac]
                     print 'acquiring top results, p < %s'%(thr)
@@ -469,20 +509,20 @@ def id_sig_results(dfz,outdir,outfl,perc_thr='top',thr_tp='r',thr='',out_tp='sam
                         update_spreadsheet(resdf,scl,x,y,res_tp)
                         if out_tp != 'samp':
                             if master_thr == thr:
-                                res_count=update_spreadsheet(resdf,scl,x,y,res_tp,v='',df_tp='mast',res_count=res_count,taskid=taskid)
+                                res_count=update_spreadsheet(mdf,scl,x,y,res_tp,v='',df_tp='mast',res_count=res_count,taskid=taskid)
                             else:
                                 if y[(res_dict[res_tp]) + 1] < master_thr:
-                                    res_count=update_spreadsheet(resdf,scl,x,y,res_tp,v='',df_tp='mast',res_count=res_count,taskid=taskid)
+                                    res_count=update_spreadsheet(mdf,scl,x,y,res_tp,v='',df_tp='mast',res_count=res_count,taskid=taskid)
                 else:
                     for k,v in res_dict.iteritems():
                         if y[v+1] < thr:
                             update_spreadsheet(resdf,scl,x,y,res_tp,v=v)
                             if out_tp != 'samp':
                                 if master_thr == thr:
-                                    res_count=update_spreadsheet(resdf,scl,x,y,res_tp,v=v,df_tp='mast',res_count=res_count,taskid=taskid)
+                                    res_count=update_spreadsheet(mdf,scl,x,y,res_tp,v=v,df_tp='mast',res_count=res_count,taskid=taskid)
                                 else:
                                     if y[v+1] < master_thr:
-                                        res_count=update_spreadsheet(resdf,scl,x,y,res_tp,v=v,df_tp='mast',res_count=res_count,taskid=taskid)
+                                        res_count=update_spreadsheet(mdf,scl,x,y,res_tp,v=v,df_tp='mast',res_count=res_count,taskid=taskid)
             else:
                 if res_tp != 'all':
                     if thr_tp == 'rabs':
@@ -490,19 +530,19 @@ def id_sig_results(dfz,outdir,outfl,perc_thr='top',thr_tp='r',thr='',out_tp='sam
                             update_spreadsheet(resdf,scl,x,y,res_tp)
                             if out_tp != 'samp':
                                 if master_thr == thr:
-                                    res_count=update_spreadsheet(resdf,scl,x,y,res_tp,v='',df_tp='mast',res_count=res_count,taskid=taskid)
+                                    res_count=update_spreadsheet(mdf,scl,x,y,res_tp,v='',df_tp='mast',res_count=res_count,taskid=taskid)
                                 else:
                                     if abs(y[(res_dict[res_tp])]) > thr:
-                                        res_count=update_spreadsheet(resdf,scl,x,y,res_tp,v='',df_tp='mast',res_count=res_count,taskid=taskid)
+                                        res_count=update_spreadsheet(mdf,scl,x,y,res_tp,v='',df_tp='mast',res_count=res_count,taskid=taskid)
                     else:
                         if y[(res_dict[res_tp])] > thr:
                             update_spreadsheet(resdf,scl,x,y,res_tp)
                             if out_tp != 'samp':
                                 if master_thr == thr:
-                                    res_count=update_spreadsheet(resdf,scl,x,y,res_tp,v='',df_tp='mast',res_count=res_count,taskid=taskid)
+                                    res_count=update_spreadsheet(mdf,scl,x,y,res_tp,v='',df_tp='mast',res_count=res_count,taskid=taskid)
                                 else:
                                     if y[(res_dict[res_tp])] > thr:
-                                        res_count=update_spreadsheet(resdf,scl,x,y,res_tp,v='',df_tp='mast',res_count=res_count,taskid=taskid)
+                                        res_count=update_spreadsheet(mdf,scl,x,y,res_tp,v='',df_tp='mast',res_count=res_count,taskid=taskid)
                 else:
                     for k,v in res_dict.iteritems():
                         if thr_tp == 'rabs':
@@ -510,19 +550,19 @@ def id_sig_results(dfz,outdir,outfl,perc_thr='top',thr_tp='r',thr='',out_tp='sam
                                 update_spreadsheet(resdf,scl,x,y,res_tp,v=v)
                                 if out_tp != 'samp':
                                     if master_thr == thr:
-                                        res_count=update_spreadsheet(resdf,scl,x,y,res_tp,v=v,df_tp='mast',res_count=res_count,taskid=taskid)
+                                        res_count=update_spreadsheet(mdf,scl,x,y,res_tp,v=v,df_tp='mast',res_count=res_count,taskid=taskid)
                                     else:
                                         if abs(y[v]) > thr:
-                                            res_count=update_spreadsheet(resdf,scl,x,y,res_tp,v=v,df_tp='mast',res_count=res_count,taskid=taskid)
+                                            res_count=update_spreadsheet(mdf,scl,x,y,res_tp,v=v,df_tp='mast',res_count=res_count,taskid=taskid)
                         else:
                             if y[v] > thr:
                                 update_spreadsheet(resdf,scl,x,y,res_tp,v=v)
                                 if out_tp != 'samp':
                                     if master_thr == thr:
-                                        res_count=update_spreadsheet(resdf,scl,x,y,res_tp,v=v,df_tp='mast',res_count=res_count,taskid=taskid)
+                                        res_count=update_spreadsheet(mdf,scl,x,y,res_tp,v=v,df_tp='mast',res_count=res_count,taskid=taskid)
                                     else:
                                         if y[v] > thr:
-                                            res_count=update_spreadsheet(resdf,scl,x,y,res_tp,v=v,df_tp='mast',res_count=res_count,taskid=taskid)
+                                            res_count=update_spreadsheet(mdf,scl,x,y,res_tp,v=v,df_tp='mast',res_count=res_count,taskid=taskid)
 
     # save results
 
@@ -578,7 +618,7 @@ def update_spreadsheet(indf,scl,x,y,res_tp,v='',df_tp='samp',res_count=0,taskid=
 
         return res_count
 
-def parallel_in(func,outdir,ipt1,ipt2):
+def parallel_in(func,outdir,ipt1,ipt2,ipt3=''):
 
     if func == 'va':
         idf = pandas.ExcelFile(ipt1).parse('Sheet1')
@@ -586,20 +626,25 @@ def parallel_in(func,outdir,ipt1,ipt2):
         pv_vals = idf[:]['pv_vals'].tolist()
 
         for ind,scan in enumerate(scans):
-            os.system('cp %s %s/%s_subject%s'%(scan,outdir,ipt2,ind))
-            scans = glob(os.path.join(outpth,'%s_*'%(ipt2)))
+            if scan[-1] == 'z':
+                os.system('cp %s %s/%s_subject%s.nii.gz'%(scan,outdir,ipt2,ind))
+            else:
+                os.system('cp %s %s/%s_subject%s.nii'%(scan,outdir,ipt2,ind))
+            scans = glob(os.path.join(outdir,'%s_*'%(ipt2)))
 
-    return scans,pv_vals
+        return scans,pv_vals
 
     if func == 'isr':
         dfz = {}
-        ssz = glob(os.path.join(outdir,'%s*_res.xls'%(ipt1)))
+        ssz = glob(os.path.join(outdir,'%s*_res%s.xls'%(ipt1,ipt3)))
         for ss in ssz:
             scl = os.path.split(ss)[1].rsplit('_')[1].rsplit('scl')[1]
             ndf = pandas.ExcelFile(ss).parse('Sheet1')
             dfz.update({scl: ndf})
+            if not ipt2:
+                os.remove(ss)
 
-    return dfz
+        return dfz
 
 def parallel_out(func,outdir,opt1,opt2):
 

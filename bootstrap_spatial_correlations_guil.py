@@ -1,6 +1,6 @@
 import os
 from glob import glob
-simport pandas
+import pandas
 import random, math
 import numpy as np
 import nibabel as ni
@@ -64,7 +64,7 @@ def define_bootstrap_sample(ss,subcol,subpth,pv,outpth,sample_perc=0.5,num_gps=3
 
     if subcol != 'index':
         if subcol in subdf.columns.tolist():
-            subdf.index = subdf[:][subcol].tolist()
+            df.index = df[:][subcol].tolist()
         else:
             raise IOError('there is no column in the spreadsheet called %s'%(subcol))
 
@@ -318,7 +318,7 @@ def spatial_correlation_searchlight_from_NIAK_GLMs(indir,cov_img,outdir,contrast
         df, rdf, scalar = wr.get_parcelwise_correlation_map_from_glm_file(outdir,glm,scale_templ,scale,contrast,eff=eff,cov_msk='',cov_img=cov_img,conndf = '',poly=poly)
         dfz.update({scale: rdf})
         if save:
-            rdf.to_excel(os.path.join(outdir,'%s_scl%s_res%s.xls'%(save,scale,taskid)))
+            rdf.to_csv(os.path.join(outdir,'%s_scl%s_res%s.csv'%(save,scale,taskid)))
 
     resdf = pandas.DataFrame(columns =['scale','parcel','measure','value','pvalue'])
     os.system('rm %s'%(os.path.join(outdir,'%s_*'%(cde))))
@@ -433,7 +433,7 @@ def id_sig_results(dfz,outdir,outfl='outfl',perc_thr='top',thr_tp='r',thr='',out
             else:
                 raise IOError('input spreadsheet filetype not recognized')
         else:
-            master_ss = os.path.join(outdir,'master_ss.xls')
+            master_ss = os.path.join(outdir,'master_ss.csv')
             print 'no master_ss found. Creating new master_ss at %s'%(master_ss)
             mdf = pandas.DataFrame()
 
@@ -455,9 +455,7 @@ def id_sig_results(dfz,outdir,outfl='outfl',perc_thr='top',thr_tp='r',thr='',out
             if master_thr > thr:
                 raise ValueError('master_thr must be more conservative than thr')
 
-    res_dict = {'r': 0, 'rho': 2}
-    if len(coltest) > 8:
-        res_dict.update({'poly': 4})
+    res_dict = {'r': 0, 'rho': 2, 'poly': 4}
 
     if perc_thr:
         comps = 0
@@ -571,21 +569,19 @@ def id_sig_results(dfz,outdir,outfl='outfl',perc_thr='top',thr_tp='r',thr='',out
     # save results
 
     if out_tp != 'mast':
-        outstr = os.path.join(outdir,'%s%s.xls'%(outfl,taskid))
+        outstr = os.path.join(outdir,'%s%s.csv'%(outfl,taskid))
         print 'writing results to spreadsheet at %s'%(outstr)
-        resdf.to_excel(outstr)
+        resdf.to_csv(outstr)
 
     if out_tp != 'samp':
         print 'writing results to master spreadsheet at %s'%(master_ss)
-        mdf.to_excel(master_ss)
+        mdf.to_csv(master_ss)
 
 def update_spreadsheet(indf,scl,x,y,res_tp,v='',df_tp='samp',res_count=0,taskid=''):
     '''update spreadsheet with values indexed specifically from searchlight
     generated spreadsheet'''
 
-    res_dict = {'r': 0, 'rho': 2}
-    if len(indf.columns.tolist()) > 8:
-        res_dict.update({'poly': 4})
+    res_dict = {'r': 0, 'rho': 2, 'poly': 4}
 
     if df_tp == 'samp':
         ind = '%s: %s'%(scl,x)
@@ -627,7 +623,7 @@ def update_spreadsheet(indf,scl,x,y,res_tp,v='',df_tp='samp',res_count=0,taskid=
 def parallel_in(func,outdir,ipt1,ipt2,ipt3=''):
 
     if func == 'va':
-        idf = pandas.ExcelFile(ipt1).parse('Sheet1')
+        idf = pandas.read_csv(ipt1)
         scans = idf.index.tolist()
         pv_vals = idf[:]['pv_vals'].tolist()
 
@@ -636,16 +632,16 @@ def parallel_in(func,outdir,ipt1,ipt2,ipt3=''):
                 os.system('cp %s %s/%s_subject%s.nii.gz'%(scan,outdir,ipt2,ind))
             else:
                 os.system('cp %s %s/%s_subject%s.nii'%(scan,outdir,ipt2,ind))
-        scans = glob(os.path.join(outdir,'%s_*'%(ipt2)))
+            scans = glob(os.path.join(outdir,'%s_*'%(ipt2)))
 
         return scans,pv_vals
 
     if func == 'isr':
         dfz = {}
-        ssz = glob(os.path.join(outdir,'%s*_res%s.xls'%(ipt1,ipt3)))
+        ssz = glob(os.path.join(outdir,'%s*_res%s.csv'%(ipt1,ipt3)))
         for ss in ssz:
             scl = os.path.split(ss)[1].rsplit('_')[1].rsplit('scl')[1]
-            ndf = pandas.ExcelFile(ss).parse('Sheet1')
+            ndf = pandas.read_csv(ss)
             dfz.update({scl: ndf})
             if not ipt2:
                 os.remove(ss)
@@ -659,7 +655,7 @@ def parallel_out(func,outdir,opt1,opt2,opt3):
         for i,sub in enumerate(odf.index.tolist()):
             odf.ix[sub,'pv_vals'] = opt2[i]
 
-    flpth = os.path.join(outdir,'dbc_out%s.xls'%(opt3))
-    odf.to_excel(flpth)
+    flpth = os.path.join(outdir,'dbc_out%s.csv'%(opt3))
+    odf.to_csv(flpth)
 
     return flpth

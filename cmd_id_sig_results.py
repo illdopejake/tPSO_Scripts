@@ -1,4 +1,4 @@
-import sys
+ulmport sys
 import argparse
 import bootstrap_spatial_correlations as bsc
 
@@ -55,7 +55,7 @@ if __name__ == '__main__':
 
     if len(sys.argv) < 2:
         parser.print_help()
-        print help(bsc.spatial_correlation_searchlight_from_NIAK_GLMs)
+        print help(bsc.id_sig_results)
     else:
         args=parser.parse_args()
         bsc.id_sig_results(dfz=args.dfz,outdir=args.outdir[0],outfl=args.outfl,perc_thr=args.perc,thr_tp=args.tp,thr=args.thr,out_tp=args.outtp,res_tp=args.res,master_ss=args.mss,master_thr=args.mthr,par=args.in_str[0],parsave=args.save,taskid=args.tid)

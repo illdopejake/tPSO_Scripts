@@ -1,4 +1,5 @@
 function [files_in,files_out,opt] = voxelwise_analysis(files_in,files_out,opt)
+warning on backtrace
 %DEFINE BOOTSTRAP SAMPLE
 %   For detailed explanation of function and inputs/options, you can:
 %	1. Into your shell, type python cmd_voxelwise_analysis.py

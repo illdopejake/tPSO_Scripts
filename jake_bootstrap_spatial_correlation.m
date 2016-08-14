@@ -1,6 +1,6 @@
 function [pipe,opt] = jake_bootstrap_spatial_correlation(files_in,opt)
 niak_gb_vars
-
+warning on backtrace
 %UNTITLED Summary of this function goes here
 %   For explanation of function and inputs, see python scripts by doing one of the following:
 %   1. For any of the cmd_* functions, into your shell, type 'python [func_name]'
@@ -15,8 +15,8 @@ end
 
 % files_in
 files_in = psom_struct_defaults(files_in,...
-           { 'ss' , 'subcol', 'subpath', 'pv', 'indir', 'contrast', 'templ_str', 'norm_fl',         'mss'            },...
-           { NaN    , NaN   ,  NaN     ,  NaN,  NaN   ,  NaN      ,  NaN       , 'gb_niak_omitted', 'gb_niak_omitted'});
+           { 'ss' , 'subpath', 'indir', 'norm_fl'         , 'mss'            },...
+           { NaN   , NaN     ,  NaN   , 'gb_niak_omitted' , 'gb_niak_omitted'});
 % options
 opt = psom_struct_defaults(opt,...
            { 'folder_out' , 'nb_samp' , 'label_out' , 'flag_test', 'psom'    , 'dbs'     , 'va'     , 'scs'    , 'isr'   },...
@@ -35,16 +35,16 @@ opt.psom = psom_struct_defaults(opt.psom,...
 
 % dbs options
 opt.dbs = psom_struct_defaults(opt.dbs,...
-            { 'perc' , 'gps' , 'par' , },...
-            { 0.5    , 3     , 'True'  });
+            { 'subcol' , 'pv' , 'perc' , 'gps' , 'par' , },...
+            { NaN      , NaN  , 0.5    , 3     , 'True'  });
 
 opt.va = psom_struct_defaults(opt.va,...
             {'outmap' , 'nonpar' , 'par'  , 'inter' , },...
             { 't'     ,  'False' , 'True' , 'False' , });
 
 opt.scs = psom_struct_defaults(opt.scs,...
-            {'sclstr' , 'eff' , 'poly'},...
-            {'scale'  ,  't'  ,   1   });
+            {'contrast' , 'templ_str' , 'sclstr' , 'eff' , 'poly'},...
+            { NaN       , NaN         , 'scale'  ,  't'  ,   1   });
 
 opt.isr = psom_struct_defaults(opt.isr,...
             {'perc' , 'type' , 'thresh'           , 'outtype' , 'res' , 'mthresh'          , 'save'},...
@@ -60,7 +60,7 @@ for taskid = 1:opt.nb_samp
     dbs_name = sprintf('dbs_%d',taskid);
     dbs_in = files_in;
     dbs_opt = opt.dbs;
-    dbs_out = [opt.folder_out filesep sprintf('dbc_out%d.xls',taskid)];
+    dbs_out = [opt.folder_out filesep sprintf('dbc_out%d.csv',taskid)];
     
     pipe = psom_add_job(pipe, dbs_name, 'define_bootstrap_samples', dbs_in, dbs_out, dbs_opt);
     
@@ -86,17 +86,20 @@ for taskid = 1:opt.nb_samp
     scs_in = files_in;
     scs_in.cov_img = va_out;
     scs_opt = opt.scs;
-    scs_out = scs_opt.outstr;
+    %this line is a placeholder for psom. Also needs to be fixed so the 7 is a real number from inputs
+    scs_out = [opt.folder_out filesep sprintf('%s_scl7_res%d.csv',scs_opt.outstr,taskid)];
 
-    pipe = psom_add_job(pipe,va_name, 'searchlight', scs_in, scs_out, scs_opt);
+    pipe = psom_add_job(pipe,scs_name, 'searchlight', scs_in, scs_out, scs_opt);
 
     % set up options for function isr
     opt.isr.tid = taskid;
     opt.isr.outdir = opt.folder_out;
+    opt.isr.outstr = opt.label_out;
     opt.isr.flag_test = opt.flag_test;
     isr_name = sprintf('isr_%d',taskid);
     isr_in = files_in;
-    isr_in.outstr = scs_out;
+    %this line is a placeholder for psom
+    isr_in.dud = scs_out;
     isr_opt = opt.isr;
     if isr_opt.outtype ~= 'mast'
         isr_out.samp = [opt.folder_out filesep sprintf('%s%s.csv',opt.label_out,taskid)];
@@ -109,7 +112,7 @@ for taskid = 1:opt.nb_samp
             isr_out.mast = [opt.folder_out filesep sprintf('master_ss.csv')];
         end
     end
-    pipe = psom_add_job(pipe,va_name,'id_sig_results',isr_in, isr_out, isr_opt);
+    pipe = psom_add_job(pipe,isr_name,'id_sig_results',isr_in, isr_out, isr_opt);
 end
 
 %% run the pipeline

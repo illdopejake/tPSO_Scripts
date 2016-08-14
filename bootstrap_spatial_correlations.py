@@ -1,13 +1,14 @@
 import os
 from glob import glob
-simport pandas
+import pandas
 import random, math
 import numpy as np
 import nibabel as ni
 import scipy.stats.stats as st
+import randomstate.prng.mrg32k3a as rnd
 import propagation_correlations as wr
 
-def define_bootstrap_sample(ss,subcol,subpth,pv,outpth,sample_perc=0.5,num_gps=3,par=False,taskid = ''):
+def define_bootstrap_sample(ss,subcol,subpth,pv,outpth,sample_perc=0.5,num_gps=3,par=False,rand=False,taskid = ''):
     """takes an existing sample of subjects from a spreadsheet and creates a
     subsample, balanced by a variable. Outputs a subsamble membership txt file and
     a list of paths corresponding to subsample member scans)
@@ -36,6 +37,11 @@ def define_bootstrap_sample(ss,subcol,subpth,pv,outpth,sample_perc=0.5,num_gps=3
 
     task_id = used to keep track of id in the case of multiple bootstrap samples
 
+    rand = Determine how psuedorandom generator is seeded for the randomization
+    of the sample. Leave as False to use random.shuffle with a random seed, 
+    which will create unreproducible samples and is not recommended for 
+    parallelization. Set as an int to use int as seed for mrg322ka PRNG 
+    (recommended for parallelization or reproducible results)
 
     Outputs a list of paths and a vector containing the values for the
     predictor variable
@@ -46,6 +52,8 @@ def define_bootstrap_sample(ss,subcol,subpth,pv,outpth,sample_perc=0.5,num_gps=3
     the scan does not /start/ with the id.
     2) There are no more than 1 scan per ID within subpth directory
     """
+
+    par = check_bool(par)
 
     # prep spreadsheet
 
@@ -94,10 +102,6 @@ def define_bootstrap_sample(ss,subcol,subpth,pv,outpth,sample_perc=0.5,num_gps=3
 
     subsamp = []
     n_per_gp = int(subsamp_n * sample_perc)
-    for gp,lst in subsamp_dict.iteritems():
-        random.shuffle(lst)
-        for i in range(n_per_gp):
-          subsamp.append(lst[i])
 
    # collect outputs
     scans = []
@@ -111,7 +115,7 @@ def define_bootstrap_sample(ss,subcol,subpth,pv,outpth,sample_perc=0.5,num_gps=3
 
     # make membership record
     ndf = pandas.DataFrame(index=subsamp)
-    if len(taskid) > 0:
+    if taskid:
         ndf.to_csv(os.path.join(outpth,'%s_subsample_membership'%(taskid)))
     else:
         cde = wr.codegen(6)
@@ -124,6 +128,27 @@ def define_bootstrap_sample(ss,subcol,subpth,pv,outpth,sample_perc=0.5,num_gps=3
         return scans, pv_vals
 
 #def generate_RSNs_for_subsample
+
+def randomize_4_montecarlo(seed,jumpseed,jump_mult,rsamp):
+
+    intp = type(rsamp[0])
+    rs = rnd.RandomState(seed)
+    jumpseed = jumpseed * jump_mult
+    rs.jump(jumpseed)
+    rand_array = rs.randn(len(rsamp))
+
+    randf = pandas.DataFrame(np.zeros((len(rsamp),2)),columns=['val','rand'])
+    for i in range(len(rsamp)):
+        randf.loc[randf.index[i],'val'] = rsamp[i]
+        randf.loc[randf.index[i],'rand'] = rand_array[i]
+    randf = randf.sort('rand')
+    nrsamp = randf[:]['val'].tolist()
+
+    if type(nrsamp[0]) != intp:
+        nrsamp = [intp(x) for x in nrsamp]
+
+
+    return nrsamp
 
 def convert_r2t(r,samp_df):
     t = math.sqrt((samp_df * r**2) / (1 - r**2))
@@ -176,6 +201,11 @@ def voxelwise_analysis(scans,pv_vals,outfl,outdir,out_tp='r',nonpar=False,taskid
     NOTE: As of now, script does not regress out confounding variables or mask
     analysis
     """
+
+    nonpar = check_bool(nonpar)
+    parallel = check_bool(parallel)
+    indata = check_bool(indata)
+    intermed = check_bool(intermed)
 
     cde = wr.codegen(6)
 
@@ -292,7 +322,7 @@ def spatial_correlation_searchlight_from_NIAK_GLMs(indir,cov_img,outdir,contrast
     Outputs a dict where the key is scale and the value is a dataframe
     containing results at that scale
     '''
-
+    save = check_bool(save)
     if save:
         if '_' in save:
             print('WARNING: no _ aloud in save. Removing...')
@@ -387,6 +417,8 @@ def id_sig_results(dfz,outdir,outfl='outfl',perc_thr='top',thr_tp='r',thr='',out
     '''
 
     # check inputs
+    par = check_bool(par)
+    parsave = check_bool(parsave)
     acc_vals = ['r','rho','poly', 'all']
     if res_tp not in acc_vals:
         raise ValueError('res_tp must be set to an appropriate value: r. rho, poly, or all. See documentation for id_sig_results for help ')
@@ -630,6 +662,7 @@ def parallel_in(func,outdir,ipt1,ipt2,ipt3=''):
         idf = pandas.ExcelFile(ipt1).parse('Sheet1')
         scans = idf.index.tolist()
         pv_vals = idf[:]['pv_vals'].tolist()
+        os.system('rm %s'%(ipt1))
 
         for ind,scan in enumerate(scans):
             if scan[-1] == 'z':
@@ -663,3 +696,211 @@ def parallel_out(func,outdir,opt1,opt2,opt3):
     odf.to_excel(flpth)
 
     return flpth
+
+def check_bool(var):
+    '''for commandline use only. Change string instances of 'False' and 'True'
+    into boolean values
+    valist = list of variables to convert'''
+
+    if var == 'False':
+        var = False
+    return var
+
+def collect_results(ss_dir,ss_str,ss_ext,outdir,outfl,thr_tp,summary):
+
+    if thr_tp == 'r' or 'rabs':
+        vcol = 'value'
+    elif thr_tp == 'p':
+        vcol = 'pvalue'
+
+    ssz = sorted(glob(os.path.join(ss_dir,'%s*.%s'%(ss_str,ss_ext))))
+
+    # concat all frames for information and top results
+    print 'concatenating frames'
+    framez = []
+    for ss in ssz:
+        if ss_ext[0] == 'x':
+            df = pandas.ExcelFile(ss).parse('Sheet1')
+        else:
+            df = pandas.read_csv(ss)
+            df.index = df[:][df.columns[0]].tolist()
+        framez.append(df)
+    bigdf = pandas.concat(framez)
+    st_typez = pandas.unique(bigdf[:]['measure'])
+    sumcolz = []
+    coltpz = ['_top','_topreg']
+    if thr_tp == 'rabs':
+        coltpz.append('_sign')
+    for tp in st_typez:
+        for ctp in coltpz:
+            col = '%s%s'%(tp,ctp)
+            sumcolz.append(col)
+    sumdf = pandas.DataFrame(np.zeros((1,len(sumcolz))),columns = sumcolz)
+    bigdf = bigdf.sort('measure')
+
+    # address redundancy labeling from id_sig_results
+    print 'removing redundancy labeling...'
+    bigdf = remove_redundancy_labels(bigdf)
+
+    # get useless summary measures
+    print 'print creating summary measures'
+    if summary:
+        for tp in st_typez:
+            for i,indz in enumerate(bigdf.iterrows()):
+                if indz[1]['measure'] == tp:
+                    if i == 0:
+                        if thr_tp == 'rabs':
+                            sumdf.ix[sumdf.index[0],'%s_top'%(tp)] = abs(indz[1][vcol])
+                        else:    
+                            sumdf.ix[sumdf.index[0],'%s_top'%(tp)] = indz[1][vcol]
+                        sumdf.ix[sumdf.index[0],'%s_topreg'%(tp)] = indz[0]
+                    else:
+                        if thr_tp == 'r':
+                            if indz[1][vcol] > sumdf.ix[sumdf.index[0],'%s_top'%(tp)]:
+                                sumdf.ix[sumdf.index[0],'%s_top'%(tp)] = indz[1][vcol]
+                                sumdf.ix[sumdf.index[0],'%s_topreg'%(tp)] = indz[0]  
+                        elif thr_tp == 'rabs':
+                            if abs(indz[1][vcol]) > sumdf.ix[sumdf.index[0],'%s_top'%(tp)]:
+                                sumdf.ix[sumdf.index[0],'%s_top'%(tp)] = abs(indz[1][vcol])
+                                sumdf.ix[sumdf.index[0],'%s_topreg'%(tp)] = indz[0]
+                                if indz[1][vcol] < 0:
+                                    sumdf.ix[sumdf.index[0],'%s_sign'%(tp)] = 'neg'
+                                else:
+                                    sumdf.ix[sumdf.index[0],'%s_sign'%(tp)] = 'pos'
+                        else:
+                            if indz[1][vcol] < sumdf.ix[sumdf.index[0],'%s_top'%(tp)]:
+                                 sumdf.ix[sumdf.index[0],'%s_top'%(tp)] = indz[1][vcol]
+                                 sumdf.ix[sumdf.index[0],'%s_topreg'%(tp)] = indz[0]
+        if ss_ext[0] == 'x':
+            sumdf.to_excel(os.path.join(outdir,'summary.xls'))
+        else:
+            sumdf.to_csv(os.path.join(outdir,'summary.csv'))
+
+    # create main result dataframe
+    res_regz = pandas.unique(bigdf.index.tolist())
+
+    if len(st_typez) == 1:
+        cols = ['top_hits','appearances']
+        cols.append('mean_%s'%(st_typez[0]))
+        cols.append('sd_%s'%(st_typez[0]))
+        if thr_tp == 'rabs':
+            cols.append('tophit_sign')
+        rdf = pandas.DataFrame(index = res_regz, columns = cols)
+        
+        # get appearances and confidence statistics
+        print 'getting appearances and confidence statistics'
+        for lab in res_regz:
+            ind = bigdf.ix[lab,vcol]
+            synthesize_results(res_regz, bigdf, rdf, vcol,st_typez[0])
+
+    else:
+        rdfz = {}
+        for tp in st_typez:
+            rind = []
+            for lab in res_regz:
+                ind = bigdf.ix[lab,'measure']
+                if type(ind) == pandas.core.series.Series:
+                    if tp in ind.tolist():
+                        rind.append(lab)
+                else:
+                    if ind == tp:
+                        rind.append(lab)
+            cols = ['top_hits','appearances','mean_%s'%(tp),'sd_%s'%(tp)]
+            if thr_tp == 'rabs':
+                cols.append('tophit_sign')            
+            rdf = pandas.DataFrame(index = rind,columns = cols)
+            rdfz.update({tp: rdf})
+
+        # get appearances and confidence statistics
+        print 'getting appearances and confidence statistics'
+        for tp,rdf in rdfz.iteritems():
+            ndf = bigdf.loc[bigdf['measure'] == tp]
+            synthesize_results(rdf.index.tolist(), ndf, rdf, vcol, tp)
+
+
+    bigdf = None #don't need it any more and takes up a lot of memory
+    for ss in ssz:
+        if ss_ext[0] == 'x':
+            df = pandas.ExcelFile(ss).parse('Sheet1')
+        else:
+            df = pandas.read_csv(ss)
+            df.index = df[:][df.columns[0]].tolist()
+        if len(st_typez) == 1: 
+            extract_top_hit(rdf,df,vcol,thr_tp)
+        else:
+            df = remove_redundancy_labels(df)
+            for tp,rdf in rdfz.iteritems():
+                ndf = df.loc[df['measure'] == tp]
+                if len(ndf) > 0:
+                    extract_top_hit(rdf,ndf,vcol,thr_tp)
+
+    # save results
+    print 'spreadsheet being written to %s'%(outdir)
+    if len(st_typez) == 1:
+        if ss_ext[0] == 'x':
+            rdf.to_excel(os.path.join(outdir,'%s_finalres.xls'%(outfl)))
+        else:
+            rdf.to_csv(os.path.join(outdir,'%s_finalres.csv'%(outfl)))
+    else:
+        for tp,rdf in rdfz.iteritems():
+            if ss_ext[0] == 'x':
+                rdf.to_excel(os.path.join(outdir,'%s_finalres%s.xls'%(outfl,tp)))
+            else:
+                rdf.to_csv(os.path.join(outdir,'%s_finalres%s.csv'%(outfl,tp)))            
+
+def remove_redundancy_labels(df):
+
+    nindx = []
+    for ind in df.index.tolist():
+        if '_' in ind:
+            nind,_ = ind.split('_')
+            nindx.append(nind)
+        else:
+            nindx.append(ind)
+    df.index = nindx 
+
+    return df
+
+def synthesize_results(res_regz, bigdf, rdf, vcol,st_type):
+    for lab in res_regz:
+        ind = bigdf.ix[lab,vcol]
+        if type(ind) == pandas.core.series.Series:
+            rdf.ix[lab,'appearances'] = len(ind)
+            rdf.ix[lab,'mean_%s'%(st_type)] = ind.mean()
+            rdf.ix[lab,'sd_%s'%(st_type)] = ind.std()
+        else:
+            rdf.ix[lab,'appearances'] = 1
+            rdf.ix[lab,'mean_%s'%(st_type)] = ind
+            rdf.ix[lab,'sd_%s'%(st_type)] = np.nan
+
+def extract_top_hit(rdf,df,vcol,thr_tp):
+
+    df = df.sort(vcol)
+    if thr_tp == 'r':
+        hit = df.index[-1]
+    elif thr_tp == 'p':
+        hit = df.index[0]
+    elif thr_tp == 'rabs':
+        for sub in df.index.tolist():
+            df.ix[sub,'abs'] = df.ix[sub,'value']
+        df = df.sort('abs')
+        hit = df.index[-1]
+        if df.ix[hit,vcol] > 0:
+            hitsign = 'pos'
+        else:
+            hitsign = 'neg'
+    
+    prev = rdf.ix[hit,'top_hits']
+    if str(prev) == 'nan':
+        rdf.ix[hit,'top_hits'] = 1
+        if thr_tp == 'rabs':
+            rdf.ix[hit,'tophit_sign'] = hitsign
+    else:
+        rdf.ix[hit,'top_hits'] = (prev+1)
+        if thr_tp == 'rabs':
+            if rdf.ix[hit,'tophit_sign'] != hitsign:
+                rdf.ix[hit,'tophit_sign'] = 'both'
+    
+
+
+

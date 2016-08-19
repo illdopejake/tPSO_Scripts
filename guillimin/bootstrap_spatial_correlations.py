@@ -1,3 +1,4 @@
+#!/sb/home/jvogel/local_python/
 import os
 from glob import glob
 import pandas
@@ -6,8 +7,9 @@ import numpy as np
 import nibabel as ni
 import scipy.stats.stats as st
 import propagation_correlations as wr
+import randomstate.prng.mrg32k3a as rnd
 
-def define_bootstrap_sample(ss,subcol,subpth,pv,outpth,sample_perc=0.5,num_gps=3,par=False,taskid = ''):
+def define_bootstrap_sample(ss,subcol,subpth,pv,outpth,sample_perc=0.5,num_gps=3,par=False,rand=False,taskid = ''):
     """takes an existing sample of subjects from a spreadsheet and creates a
     subsample, balanced by a variable. Outputs a subsamble membership txt file and
     a list of paths corresponding to subsample member scans)
@@ -36,6 +38,11 @@ def define_bootstrap_sample(ss,subcol,subpth,pv,outpth,sample_perc=0.5,num_gps=3
 
     task_id = used to keep track of id in the case of multiple bootstrap samples
 
+    rand = Determine how psuedorandom generator is seeded for the randomization
+    of the sample. Leave as False to use random.shuffle with a random seed, 
+    which will create unreproducible samples and is not recommended for 
+    parallelization. Set as an int to use int as seed for mrg322ka PRNG 
+    (recommended for parallelization or reproducible results)
 
     Outputs a list of paths and a vector containing the values for the
     predictor variable
@@ -48,6 +55,13 @@ def define_bootstrap_sample(ss,subcol,subpth,pv,outpth,sample_perc=0.5,num_gps=3
     """
 
     # prep spreadsheet
+
+    par = check_bool(par)
+    rand = check_bool(rand)
+
+    # PUTTING THIS IN FOR NOW TILL GUILLIMIN STOPS BEING A SHIT
+    if rand:
+	rand = False
 
     if type(num_gps) != int:
         raise IOError('numgps must be an integer')
@@ -64,7 +78,7 @@ def define_bootstrap_sample(ss,subcol,subpth,pv,outpth,sample_perc=0.5,num_gps=3
 
     if subcol != 'index':
         if subcol in subdf.columns.tolist():
-            df.index = df[:][subcol].tolist()
+            subdf.index = subdf[:][subcol].tolist()
         else:
             raise IOError('there is no column in the spreadsheet called %s'%(subcol))
 
@@ -94,10 +108,18 @@ def define_bootstrap_sample(ss,subcol,subpth,pv,outpth,sample_perc=0.5,num_gps=3
 
     subsamp = []
     n_per_gp = int(subsamp_n * sample_perc)
-    for gp,lst in subsamp_dict.iteritems():
-        random.shuffle(lst)
+    for j,dictees in enumerate(subsamp_dict.iteritems()):
+        gp = dictees[0]
+        lst = dictees[1]
+        if not rand:
+            random.shuffle(lst)
+        else:
+            if not taskid:
+                lst = randomize_4_montecarlo(rand,random.randint(1,1000000),((j+1)*10000),lst)
+            else:
+                lst = randomize_4_montecarlo(rand,taskid,((j+1)*10000),lst)
         for i in range(n_per_gp):
-          subsamp.append(lst[i])
+            subsamp.append(lst[i])
 
    # collect outputs
     scans = []
@@ -124,6 +146,24 @@ def define_bootstrap_sample(ss,subcol,subpth,pv,outpth,sample_perc=0.5,num_gps=3
         return scans, pv_vals
 
 #def generate_RSNs_for_subsample
+
+def randomize_4_montecarlo(seed,jumpseed,jump_mult,rsamp):
+
+    intp = type(rsamp[0])
+    rs = rnd.RandomState(seed)
+    jumpseed = jumpseed * jump_mult
+    rs.jump(jumpseed)
+    rand_array = rs.randn(len(rsamp))
+
+    randf = pandas.DataFrame(np.zeros((len(rsamp),2)),columns=['val','rand'])
+    for i in range(len(rsamp)):
+        randf.loc[randf.index[i],'val'] = rsamp[i]
+        randf.loc[randf.index[i],'rand'] = rand_array[i]
+    randf = randf.sort('rand')
+    nrsamp = randf[:]['val'].tolist()
+
+    if type(nrsamp[0]) != intp:
+        nrsamp = [intp(x) for x in nrsamp]
 
 def convert_r2t(r,samp_df):
     t = math.sqrt((samp_df * r**2) / (1 - r**2))
@@ -177,6 +217,11 @@ def voxelwise_analysis(scans,pv_vals,outfl,outdir,out_tp='r',nonpar=False,taskid
     analysis
     """
 
+    nonpar = check_bool(nonpar)
+    parallel = check_bool(parallel)
+    indata = check_bool(indata)
+    intermed = check_bool(intermed)
+
     cde = wr.codegen(6)
 
     if parallel:
@@ -186,8 +231,8 @@ def voxelwise_analysis(scans,pv_vals,outfl,outdir,out_tp='r',nonpar=False,taskid
         if type(indata) != str:
             data = indata
         else:
-            if not parallel:
-                print 'loading data...'
+            #if not parallel:
+            print 'loading data...'
             data=ni.load(indata).get_data()
     else:
         if intermed:
@@ -200,20 +245,20 @@ def voxelwise_analysis(scans,pv_vals,outfl,outdir,out_tp='r',nonpar=False,taskid
         for scn in scans:
             cmd = cmd+' %s'%(scn)
 
-        if not parallel:
-            print 'creating input 4D volume...'
+        #if not parallel:
+        print 'creating input 4D volume...'
         os.system(cmd)
 
-        if not parallel:
-            print 'loading data'
+        #if not parallel:
+        print 'loading data'
         data = ni.load(os.path.join(outdir,'%s.nii.gz'%(intfl))).get_data()
 
     # run voxelwise analysis
-    if not parallel:
-        print 'beginning analysis...'
+    #if not parallel:
+    print 'beginning analysis...'
     x,y,z,t_dim = data.shape
     results = np.zeros((x,y,z))
-    aff = ni.load(scans[0]).affine
+    aff = ni.load(scans[0]).get_affine()
 
     for xind in range(x):
         for yind in range(y):
@@ -229,13 +274,13 @@ def voxelwise_analysis(scans,pv_vals,outfl,outdir,out_tp='r',nonpar=False,taskid
                     if out_tp == 't':
                         r = convert_r2t(r,t_dim)
                     results[xind,yind,zind] = r
-        if not parallel:
-            print 'finished %s/%s job clusters'%(xind,x)
+        #if not parallel:
+        print 'finished %s/%s job clusters'%(xind,x)
 
     # write image
     outstr = '%s%s'%(os.path.join(outdir,outfl),taskid)
-    if not parallel:
-        print 'writing image to %s'%(outstr)
+    #if not parallel:
+    print 'writing image to %s'%(outstr)
     nimg = ni.Nifti1Image(results,aff)
     ni.save(nimg,outstr)
     outstr = outstr+'.nii'
@@ -292,7 +337,7 @@ def spatial_correlation_searchlight_from_NIAK_GLMs(indir,cov_img,outdir,contrast
     Outputs a dict where the key is scale and the value is a dataframe
     containing results at that scale
     '''
-
+    save=check_bool(save)
     if save:
         if '_' in save:
             print('WARNING: no _ aloud in save. Removing...')
@@ -387,6 +432,9 @@ def id_sig_results(dfz,outdir,outfl='outfl',perc_thr='top',thr_tp='r',thr='',out
     '''
 
     # check inputs
+    par = check_bool(par)
+    parsave = check_bool(parsave)
+
     acc_vals = ['r','rho','poly', 'all']
     if res_tp not in acc_vals:
         raise ValueError('res_tp must be set to an appropriate value: r. rho, poly, or all. See documentation for id_sig_results for help ')
@@ -440,7 +488,7 @@ def id_sig_results(dfz,outdir,outfl='outfl',perc_thr='top',thr_tp='r',thr='',out
     coltest = dfz[dfz.keys()[0]].columns.tolist()
     if res_tp == 'rho' and 'rho' not in coltest:
         raise IOError('res_tp set to rho but no nonparametric results available')
-    if res_tp == 'poly' and  len(coltest) < 8:
+    if res_tp == 'poly' and  len(coltest) < 4:
         raise IOError('res_tp set to poly but no polynomial results available')
 
     # determine thresholds    
@@ -455,7 +503,9 @@ def id_sig_results(dfz,outdir,outfl='outfl',perc_thr='top',thr_tp='r',thr='',out
             if master_thr > thr:
                 raise ValueError('master_thr must be more conservative than thr')
 
-    res_dict = {'r': 0, 'rho': 2, 'poly': 4}
+    res_dict = {'r': 0, 'rho': 2}
+    if len(coltest) > 4:
+	res_dict.update({'poly': 4})
 
     if perc_thr:
         comps = 0
@@ -490,6 +540,7 @@ def id_sig_results(dfz,outdir,outfl='outfl',perc_thr='top',thr_tp='r',thr='',out
                     thr = sorted(vec)[1]
                 elif thr_tp == 'r' or thr_tp == 'rabs':
                     thr = sorted(vec)[-2]
+		print 'threshold < %s'%(thr)
             else:
                 frac = int(comps * thr)
                 if frac==0:
@@ -508,63 +559,64 @@ def id_sig_results(dfz,outdir,outfl='outfl',perc_thr='top',thr_tp='r',thr='',out
             if thr_tp == 'p':
                 if res_tp != 'all':
                     if y[(res_dict[res_tp]) + 1] < thr:
-                        update_spreadsheet(resdf,scl,x,y,res_tp)
+                        resdf=update_spreadsheet(resdf,scl,x,y,res_tp)
                         if out_tp != 'samp':
                             if master_thr == thr:
-                                res_count=update_spreadsheet(mdf,scl,x,y,res_tp,v='',df_tp='mast',res_count=res_count,taskid=taskid)
+                                mdf,res_count=update_spreadsheet(mdf,scl,x,y,res_tp,v='',df_tp='mast',res_count=res_count,taskid=taskid)
                             else:
                                 if y[(res_dict[res_tp]) + 1] < master_thr:
-                                    res_count=update_spreadsheet(mdf,scl,x,y,res_tp,v='',df_tp='mast',res_count=res_count,taskid=taskid)
+                                    mdf,res_count=update_spreadsheet(mdf,scl,x,y,res_tp,v='',df_tp='mast',res_count=res_count,taskid=taskid)
                 else:
                     for k,v in res_dict.iteritems():
                         if y[v+1] < thr:
-                            update_spreadsheet(resdf,scl,x,y,res_tp,v=v)
+                            resdf=update_spreadsheet(resdf,scl,x,y,res_tp,v=v)
                             if out_tp != 'samp':
                                 if master_thr == thr:
-                                    res_count=update_spreadsheet(mdf,scl,x,y,res_tp,v=v,df_tp='mast',res_count=res_count,taskid=taskid)
+                                    mdf,res_count=update_spreadsheet(mdf,scl,x,y,res_tp,v=v,df_tp='mast',res_count=res_count,taskid=taskid)
                                 else:
                                     if y[v+1] < master_thr:
-                                        res_count=update_spreadsheet(mdf,scl,x,y,res_tp,v=v,df_tp='mast',res_count=res_count,taskid=taskid)
+                                        mdf,res_count=update_spreadsheet(mdf,scl,x,y,res_tp,v=v,df_tp='mast',res_count=res_count,taskid=taskid)
             else:
                 if res_tp != 'all':
                     if thr_tp == 'rabs':
                         if abs(y[(res_dict[res_tp])]) > thr:
-                            update_spreadsheet(resdf,scl,x,y,res_tp)
+                            resdf=update_spreadsheet(resdf,scl,x,y,res_tp)
                             if out_tp != 'samp':
                                 if master_thr == thr:
-                                    res_count=update_spreadsheet(mdf,scl,x,y,res_tp,v='',df_tp='mast',res_count=res_count,taskid=taskid)
+                                    mdf,res_count=update_spreadsheet(mdf,scl,x,y,res_tp,v='',df_tp='mast',res_count=res_count,taskid=taskid)
                                 else:
                                     if abs(y[(res_dict[res_tp])]) > thr:
-                                        res_count=update_spreadsheet(mdf,scl,x,y,res_tp,v='',df_tp='mast',res_count=res_count,taskid=taskid)
+                                        mdf,res_count=update_spreadsheet(mdf,scl,x,y,res_tp,v='',df_tp='mast',res_count=res_count,taskid=taskid)
                     else:
                         if y[(res_dict[res_tp])] > thr:
-                            update_spreadsheet(resdf,scl,x,y,res_tp)
+                            resdf=update_spreadsheet(resdf,scl,x,y,res_tp)
                             if out_tp != 'samp':
                                 if master_thr == thr:
-                                    res_count=update_spreadsheet(mdf,scl,x,y,res_tp,v='',df_tp='mast',res_count=res_count,taskid=taskid)
+                                    mdf,res_count=update_spreadsheet(mdf,scl,x,y,res_tp,v='',df_tp='mast',res_count=res_count,taskid=taskid)
                                 else:
                                     if y[(res_dict[res_tp])] > thr:
-                                        res_count=update_spreadsheet(mdf,scl,x,y,res_tp,v='',df_tp='mast',res_count=res_count,taskid=taskid)
+                                        mdf,res_count=update_spreadsheet(mdf,scl,x,y,res_tp,v='',df_tp='mast',res_count=res_count,taskid=taskid)
                 else:
                     for k,v in res_dict.iteritems():
                         if thr_tp == 'rabs':
                             if abs(y[v]) > thr:
-                                update_spreadsheet(resdf,scl,x,y,res_tp,v=v)
+                                resdf=update_spreadsheet(resdf,scl,x,y,res_tp,v=v)
                                 if out_tp != 'samp':
                                     if master_thr == thr:
-                                        res_count=update_spreadsheet(mdf,scl,x,y,res_tp,v=v,df_tp='mast',res_count=res_count,taskid=taskid)
+                                        mdf,res_count=update_spreadsheet(mdf,scl,x,y,res_tp,v=v,df_tp='mast',res_count=res_count,taskid=taskid)
                                     else:
                                         if abs(y[v]) > thr:
-                                            res_count=update_spreadsheet(mdf,scl,x,y,res_tp,v=v,df_tp='mast',res_count=res_count,taskid=taskid)
+                                            mdf,res_count=update_spreadsheet(mdf,scl,x,y,res_tp,v=v,df_tp='mast',res_count=res_count,taskid=taskid)
                         else:
                             if y[v] > thr:
-                                update_spreadsheet(resdf,scl,x,y,res_tp,v=v)
-                                if out_tp != 'samp':
+                                resdf = update_spreadsheet(resdf,scl,x,y,res_tp,v=v)
+                                print resdf
+				if out_tp != 'samp':
                                     if master_thr == thr:
-                                        res_count=update_spreadsheet(mdf,scl,x,y,res_tp,v=v,df_tp='mast',res_count=res_count,taskid=taskid)
+                                        mdf,res_count=update_spreadsheet(mdf,scl,x,y,res_tp,v=v,df_tp='mast',res_count=res_count,taskid=taskid)
                                     else:
                                         if y[v] > thr:
-                                            res_count=update_spreadsheet(mdf,scl,x,y,res_tp,v=v,df_tp='mast',res_count=res_count,taskid=taskid)
+                                            mdf,res_count=update_spreadsheet(mdf,scl,x,y,res_tp,v=v,df_tp='mast',res_count=res_count,taskid=taskid)
 
     # save results
 
@@ -581,7 +633,10 @@ def update_spreadsheet(indf,scl,x,y,res_tp,v='',df_tp='samp',res_count=0,taskid=
     '''update spreadsheet with values indexed specifically from searchlight
     generated spreadsheet'''
 
-    res_dict = {'r': 0, 'rho': 2, 'poly': 4}
+    res_dict = {'r': 0, 'rho': 2}
+    if len(indf.columns.tolist()) > 4:
+        res_dict.update({'poly': 4})
+
 
     if df_tp == 'samp':
         ind = '%s: %s'%(scl,x)
@@ -592,6 +647,10 @@ def update_spreadsheet(indf,scl,x,y,res_tp,v='',df_tp='samp',res_count=0,taskid=
                 cnt = cnt+1
                 nind = '%s_%s'%(ind,cnt)
             ind = nind
+	# to make compatible with guillimin python
+	new_ind = indf.index.tolist()
+	new_ind.append(ind)
+	indf = indf.reindex(new_ind)
 
     if df_tp == 'samp':
         if res_tp == 'all':
@@ -604,8 +663,22 @@ def update_spreadsheet(indf,scl,x,y,res_tp,v='',df_tp='samp',res_count=0,taskid=
             indf.ix[ind, 'measure'] = res_tp
         indf.ix[ind, 'scale'] = scl
         indf.ix[ind, 'parcel'] = x
+	
+	return indf
 
     elif df_tp == 'mast':
+	#to make compatible with guillimin python
+	new_ind = indf.index.tolist()
+	new_ind.append('samp_%s'%(taskid))
+	indf = indf.reindex(new_ind)
+        cols = ['scale','parcel','value','pvalue','measure']
+	for col in cols:
+	    ncol = 'res%s_%s'%(res_count,col)
+	    ncols = indf.columns.tolist()
+	    ncols.append(ncol)
+	    indf = indf.reindex(columns=ncols)
+            	
+
         indf.ix['samp_%s'%(taskid),'res%s_scale'%(res_count)] = scl
         indf.ix['samp_%s'%(taskid),'res%s_parcel'%(res_count)] = x
         if res_tp == 'all':
@@ -618,21 +691,22 @@ def update_spreadsheet(indf,scl,x,y,res_tp,v='',df_tp='samp',res_count=0,taskid=
             indf.ix['samp_%s'%(taskid),'res%s_measure'%(res_count)] = res_tp
         res_count = res_count + 1
 
-        return res_count
+        return indf,res_count
 
 def parallel_in(func,outdir,ipt1,ipt2,ipt3=''):
 
     if func == 'va':
         idf = pandas.read_csv(ipt1)
-        scans = idf.index.tolist()
+        scans = idf[:][idf.columns[0]].tolist()
         pv_vals = idf[:]['pv_vals'].tolist()
+	os.system('rm %s'%(ipt1))
 
         for ind,scan in enumerate(scans):
             if scan[-1] == 'z':
                 os.system('cp %s %s/%s_subject%s.nii.gz'%(scan,outdir,ipt2,ind))
             else:
                 os.system('cp %s %s/%s_subject%s.nii'%(scan,outdir,ipt2,ind))
-            scans = glob(os.path.join(outdir,'%s_*'%(ipt2)))
+        scans = glob(os.path.join(outdir,'%s_*'%(ipt2)))
 
         return scans,pv_vals
 
@@ -642,6 +716,7 @@ def parallel_in(func,outdir,ipt1,ipt2,ipt3=''):
         for ss in ssz:
             scl = os.path.split(ss)[1].rsplit('_')[1].rsplit('scl')[1]
             ndf = pandas.read_csv(ss)
+            ndf = ndf.drop(ndf.columns[0],axis=1)
             dfz.update({scl: ndf})
             if not ipt2:
                 os.remove(ss)
@@ -659,3 +734,13 @@ def parallel_out(func,outdir,opt1,opt2,opt3):
     odf.to_csv(flpth)
 
     return flpth
+
+def check_bool(var):
+    '''for commandline use only. Change string instances of 'False' and 'True'
+    into boolean values
+    valist = list of variables to convert'''
+    
+    if var == 'False':
+	var = False
+    return var
+

@@ -8,7 +8,7 @@ import scipy.stats.stats as st
 import randomstate.prng.mrg32k3a as rnd
 import propagation_correlations as wr
 
-def define_bootstrap_sample(ss,subcol,subpth,pv,outpth,sample_perc=0.5,num_gps=3,par=False,rand=False,taskid = ''):
+def define_bootstrap_sample(ss,subcol,subpth,pv,outpth,resample=False,par=False,rand=False,taskid = '',sample_perc=0.5,num_gps=3):
     """takes an existing sample of subjects from a spreadsheet and creates a
     subsample, balanced by a variable. Outputs a subsamble membership txt file and
     a list of paths corresponding to subsample member scans)
@@ -24,14 +24,15 @@ def define_bootstrap_sample(ss,subcol,subpth,pv,outpth,sample_perc=0.5,num_gps=3
 
     outpth = desired output directory
 
+    resample =  False = Do not resample data.
+                subsamp = Take random subsample of data distributed across pv.*
+                * Use sample_perc and num_gps to control parameters
+                jackknife = sample using the leave-one-out method
+                permute = randomly shuffle sample without replacement
+                bootstrap = radnomly shuffle sample with replacement
+
     pv = string corresponding to the label of the column containing values for the
     predictor variable
-
-    sample_perc = the percent of the total sample to be used in each subsample.
-    Default is 0.5 for 50%. Must be float >0 and <=1
-
-    num_gps = the number of groups used to balance subsample on predictor variable.
-    Defualt is 3. Value must be int
 
     par = if True, makes compatible for command line based parallelization
 
@@ -42,6 +43,12 @@ def define_bootstrap_sample(ss,subcol,subpth,pv,outpth,sample_perc=0.5,num_gps=3
     which will create unreproducible samples and is not recommended for 
     parallelization. Set as an int to use int as seed for mrg322ka PRNG 
     (recommended for parallelization or reproducible results)
+
+    sample_perc = For subsamp method, the percent of the total sample to be 
+    used in each subsample. Default is 0.5 for 50%. Must be float >0 and <=1
+
+    num_gps = For subsamp method, the number of groups used to balance 
+    subsample on predictor variable. Default is 3. Value must be int
 
     Outputs a list of paths and a vector containing the values for the
     predictor variable
@@ -54,6 +61,8 @@ def define_bootstrap_sample(ss,subcol,subpth,pv,outpth,sample_perc=0.5,num_gps=3
     """
 
     par = check_bool(par)
+    resample = check_bool(resample)
+    rand = check_bool(rand)
 
     # prep spreadsheet
 
@@ -83,35 +92,45 @@ def define_bootstrap_sample(ss,subcol,subpth,pv,outpth,sample_perc=0.5,num_gps=3
             #subdf.drop(sub,axis = 0, inplace=True)
             subdf=subdf.drop(sub,axis=0)
 
-    if pv not in subdf.columns.tolist():
-        raise IOError('there is no column in the spreadsheet called $s'%(pv))
-    else:
-        subdf = subdf.sort(pv)
+    if resample == 'subsamp':
+        if pv not in subdf.columns.tolist():
+            raise IOError('there is no column in the spreadsheet called %s'%(pv))
+        else:
+            subdf = subdf.sort(pv)
+
     allsubs = subdf.index.tolist()
 
-    # extract subsample
+    # define sample
+    if resample == 'subsamp':
+        subsamp = subsample(allsubs,num_gps,sample_perc,rand,taskid)
+    elif resample == 'jackknife':
+        subsamp = jackknife(allsubs,taskid)
+    elif resample == 'permute':
+        subsamp = permute(allsubs,rand,taskid)
+    elif resample == 'bootstrap':
+        subsamp = bootstrap(allsubs,rand,taskid)
+    elif not resample:
+        subsamp = allsubs
+    else:
+        raise IOError('value of %s not acceptable for argument resample.'%(resample))
 
-    subsamp_n = len(allsubs) / num_gps
-    subsamp_dict = {}
-    for i in range(1,(num_gps+1)):
-        if i == 1:
-            subsamp_dict.update({i: allsubs[:subsamp_n]})
-        else:
-            subsamp_dict.update({i: allsubs[(subsamp_n * (i-1)):(subsamp_n *
-            (i))]})
 
-    subsamp = []
-    n_per_gp = int(subsamp_n * sample_perc)
-
-   # collect outputs
+    # collect outputs
     scans = []
     for sub in subsamp:
         scn = glob(os.path.join(subpth,'*%s*'%(sub)))[0]
         scans.append(scn)
 
-    pv_vals = []
-    for sub in subsamp:
-        pv_vals.append(subdf.ix[sub,pv])
+    if resample == 'subsamp' or resample == 'jackknife':
+        pv_vals = []
+        for sub in subsamp:
+            pv_vals.append(subdf.ix[sub,pv])
+    else:
+        if pv not in subdf.columns.tolist():
+            raise IOError('there is no column in the spreadsheet called %s'%(pv))
+        else:
+            pv_vals = subdf[:][pv].tolist()
+
 
     # make membership record
     ndf = pandas.DataFrame(index=subsamp)
@@ -129,26 +148,92 @@ def define_bootstrap_sample(ss,subcol,subpth,pv,outpth,sample_perc=0.5,num_gps=3
 
 #def generate_RSNs_for_subsample
 
-def randomize_4_montecarlo(seed,jumpseed,jump_mult,rsamp):
+def randomize_4_montecarlo(seed,jumpseed,jump_mult,rsamp,replace=False):
 
     intp = type(rsamp[0])
     rs = rnd.RandomState(seed)
     jumpseed = jumpseed * jump_mult
     rs.jump(jumpseed)
-    rand_array = rs.randn(len(rsamp))
+    nrsamp = []
 
-    randf = pandas.DataFrame(np.zeros((len(rsamp),2)),columns=['val','rand'])
-    for i in range(len(rsamp)):
-        randf.loc[randf.index[i],'val'] = rsamp[i]
-        randf.loc[randf.index[i],'rand'] = rand_array[i]
-    randf = randf.sort('rand')
-    nrsamp = randf[:]['val'].tolist()
+    if not replace:
+        nrsamp = rs.permutation(rsamp)
 
-    if type(nrsamp[0]) != intp:
-        nrsamp = [intp(x) for x in nrsamp]
+    else:
+        rand_array = rs.random_integers(0,len(rsamp)-1,len(rsamp))
+        for i in rand_array:
+            nrsamp.append(rsamp[i])
 
 
     return nrsamp
+
+def subsample(allsubs,num_gps,sample_perc,rand,taskid):
+
+   # extract subsample
+    if not taskid:
+        taskid = 1
+
+    subsamp_n = len(allsubs) / num_gps
+    subsamp_dict = {}
+    for i in range(1,(num_gps+1)):
+        if i == 1:
+            subsamp_dict.update({i: allsubs[:subsamp_n]})
+        else:
+            subsamp_dict.update({i: allsubs[(subsamp_n * (i-1)):(subsamp_n *
+            (i))]})
+
+    subsamp = []
+    n_per_gp = int(subsamp_n * sample_perc)
+    for i,slist in subsamp_dict.iteritems():
+        if not rand:
+            rlist = random.shuffle(slist)
+        else:
+            rlist = randomize_4_montecarlo(rand,taskid,(i+1),slist)
+        for x in range(n_per_gp):
+            subsamp.append(rlist[x]) 
+
+    return subsamp
+
+def jackknife(sample,taskid):
+
+    if not taskid:
+        taskid=1
+
+    if taskid >= len(sample):
+        raise ValueError('With jackknife, only %s samples possible. Aborting...'%(len(allsubs)))
+    else:
+        dropper = sample[taskid - 1]
+        sample.remove(dropper)
+
+        return sample
+
+def permute(sample,rand,taskid):
+    
+    if not taskid:
+        taskid=1
+
+    if not rand:
+        rlist = random.shuffle(sample)
+    else:
+        rlist = randomize_4_montecarlo(rand,taskid,1,sample)
+
+    return rlist
+
+def bootstrap(sample,rand,taskid):
+
+    if not taskid:
+        taskid=1
+
+    if not rand:
+        rlist = []
+        for i in range(len(sample)):
+            j = random.choice(sample)
+            rlist.join(j)
+
+    else:
+        rlist = randomize_4_montecarlo(rand,taskid,1,sample,replace=True)
+
+    return rlist
 
 def convert_r2t(r,samp_df):
     t = math.sqrt((samp_df * r**2) / (1 - r**2))
@@ -685,6 +770,16 @@ def parallel_in(func,outdir,ipt1,ipt2,ipt3=''):
 
         return dfz
 
+    if func == 'coi':
+        if ipt1[-1] == 'v':
+            idf = pandas.read_csv(ipt1)
+            idf.index = idf[:][idf.columns[0]].tolist()
+        else:
+            idf = pandas.ExcelFile(ipt1).parse('Sheet1')
+
+        return idf
+
+
 def parallel_out(func,outdir,opt1,opt2,opt3):
 
     if func == 'dbc':
@@ -706,7 +801,82 @@ def check_bool(var):
         var = False
     return var
 
-def collect_results(ss_dir,ss_str,ss_ext,outdir,outfl,thr_tp,summary):
+def collect_results(ss_dir,ss_str,ss_ext,outdir,outfl='',thr_tp='r',resample=False,permtest='',summary = False):
+    '''Given result spreadsheets generated by id_sig_results, will summarize
+    data from all spreadsheets into single summary spreadsheets. Function will
+    automatically handle results using multiple statistics, and will output
+    separate results files for them.
+
+    ss_dir = directory where results spreadsheets are stored
+
+    ss_str = search string unique to spreadsheets. Assumes that search string 
+    is the beginning of the filenames and that, with the extension, 
+    ssdir/ss_str*.ss_ext will find only the results spreadsheets
+
+    ss_ext = String extention for results files. Will also determine extension
+    of outfiles. No '.' needed. Example 'xls'
+
+    outdir = Directory where you wish the results spreadsheets to be outputted
+
+    outfl = string to label outfiles
+
+    thr_tp =  'r' = rank results using coefficient (r, rho, etc)
+              'rabs' = rank results using absolute value of coefficient
+              'p' = ranks results using pvalue
+
+    resample = if not False, will assess distribution of test statistics or
+    pvalues (set with thr_tp) and output the lower percentage of this
+    distribution, the value entered into resample (between 0 and 1, should be
+    something like 0.05 for a alpha of 0.05) divide by two (i.e. if resample is
+    0.05, you would get the 2.5% and 97.5% values).
+
+    permtest = If not False, use random sampling results to assess where in
+    sampling distribution a value falls, and whether it is below an alpha 
+    threshold. Input can be a pandas dataframe or apath to a spreadsheet
+    that has statistics from one sample (probably the original sample). Will
+    use input of resample as the critical value.
+
+    summary = If true, will output an excel measure that will contain 
+    information about top results across all bootstrap samples. This is
+    somewhat time consuming and the results are not very meaningful.
+
+
+    Results spreadsheet will contain information on the following:
+    top_hits = number of times a seedmap had the strongest result of its batch
+    appearances = number of times as seedmap appeared in the thresholded
+    results
+    stat_mean = the average coefficient for this seedmap across batches
+    stat_sd = the SD of the coefficient for thise seedmape across boatches
+    tophits_sign = the direction of the effect, either pos, neg, or both
+
+    If certain flags are thrown, may also contain:
+    tophit_sign = indicates whether tophit has a positive or negaitve sign
+    upper_lim_stat = the upper limit of the resample stat distribution, as set
+    by resample
+    lower_lim_stat = the lower limit of the resample stat distribution, as set
+    by resample
+    resample_pvalue = the probability the statistic is not by chance
+    resample_sig = whether the statistic is significantly not likely to be
+    chance    
+
+    '''
+
+    resample = check_bool(resample)
+    summary = check_bool(summary)
+
+    if type(permtest) == pandas.core.frame.DataFrame:
+        compdf = permtest
+        permtest = True
+    else:
+        if permtest:
+            if type(permtest) == str:
+                if permtest[-1] == 'v':
+                    compdf = pandas.read_csv(permtest)
+                    compdf.index = compdf[:][compdf.columns[0]].tolist()
+                else:
+                    compdf = pandsa.ExcelFile(permtest)
+            else:
+                raise ValueError('input for permtest invalid. Please pass a pandas dataframe or a path to a spreadsheet')
 
     if thr_tp == 'r' or 'rabs':
         vcol = 'value'
@@ -743,8 +913,8 @@ def collect_results(ss_dir,ss_str,ss_ext,outdir,outfl,thr_tp,summary):
     bigdf = remove_redundancy_labels(bigdf)
 
     # get useless summary measures
-    print 'print creating summary measures'
     if summary:
+        print 'creating sumamry measures'
         for tp in st_typez:
             for i,indz in enumerate(bigdf.iterrows()):
                 if indz[1]['measure'] == tp:
@@ -785,13 +955,21 @@ def collect_results(ss_dir,ss_str,ss_ext,outdir,outfl,thr_tp,summary):
         cols.append('sd_%s'%(st_typez[0]))
         if thr_tp == 'rabs':
             cols.append('tophit_sign')
+        if resample:
+            mcols = ['upper_lim_%s'%(st_typez[0]),'lower_lim_%s'%(st_typez[0])]
+            for mc in mcols:
+                cols.append(mc)
+            if permtest:
+                cols.append('resample_pvalue')
+                cols.append('resample_sig')
+                cols.append('test_value')
         rdf = pandas.DataFrame(index = res_regz, columns = cols)
         
         # get appearances and confidence statistics
         print 'getting appearances and confidence statistics'
         for lab in res_regz:
             ind = bigdf.ix[lab,vcol]
-            synthesize_results(res_regz, bigdf, rdf, vcol,st_typez[0])
+            synthesize_results(res_regz, bigdf, rdf, vcol,st_typez[0],resample,compdf)
 
     else:
         rdfz = {}
@@ -807,18 +985,30 @@ def collect_results(ss_dir,ss_str,ss_ext,outdir,outfl,thr_tp,summary):
                         rind.append(lab)
             cols = ['top_hits','appearances','mean_%s'%(tp),'sd_%s'%(tp)]
             if thr_tp == 'rabs':
-                cols.append('tophit_sign')            
+                cols.append('tophit_sign')
+            if resample:
+                mcols = ['upper_lim_%s'%(tp),'lower_lim_%s'%(tp)]
+                for mc in mcols:
+                    cols.append(mc)
+                if permtest:
+                    cols.append('resample_pvalue')
+                    cols.append('resample_sig')
+                    cols.append('test_value')
             rdf = pandas.DataFrame(index = rind,columns = cols)
             rdfz.update({tp: rdf})
 
         # get appearances and confidence statistics
         print 'getting appearances and confidence statistics'
+
         for tp,rdf in rdfz.iteritems():
+            if type(compdf) == pandas.core.frame.DataFrame:
+                tstdf = compdf.loc[compdf['measure'] == tp]
             ndf = bigdf.loc[bigdf['measure'] == tp]
-            synthesize_results(rdf.index.tolist(), ndf, rdf, vcol, tp)
+            synthesize_results(rdf.index.tolist(), ndf, rdf, vcol, tp, resample, tstdf)
 
-
+    # extract top hits
     bigdf = None #don't need it any more and takes up a lot of memory
+    print 'getting top hits...'
     for ss in ssz:
         if ss_ext[0] == 'x':
             df = pandas.ExcelFile(ss).parse('Sheet1')
@@ -849,6 +1039,14 @@ def collect_results(ss_dir,ss_str,ss_ext,outdir,outfl,thr_tp,summary):
                 rdf.to_csv(os.path.join(outdir,'%s_finalres%s.csv'%(outfl,tp)))            
 
 def remove_redundancy_labels(df):
+    '''for its own reasons, id_sig_results creates separate labels for
+    seedmaps that have "significant" results from multiple types of tests. This
+    function gets rid of the redundancy labels so collect_results can run
+    properly
+
+    df = input dataframe
+
+    Outputs a dataframe with redudancy labels removed from the index'''
 
     nindx = []
     for ind in df.index.tolist():
@@ -861,17 +1059,59 @@ def remove_redundancy_labels(df):
 
     return df
 
-def synthesize_results(res_regz, bigdf, rdf, vcol,st_type):
+def synthesize_results(res_regz, bigdf, rdf, vcol,st_type,resample,tstdf=False):
     for lab in res_regz:
         ind = bigdf.ix[lab,vcol]
         if type(ind) == pandas.core.series.Series:
             rdf.ix[lab,'appearances'] = len(ind)
             rdf.ix[lab,'mean_%s'%(st_type)] = ind.mean()
             rdf.ix[lab,'sd_%s'%(st_type)] = ind.std()
+            if resample:
+                p1 = int((resample/2)*len(ind))
+                p2 = int((1-(resample/2))*len(ind))
+                val1 = sorted(ind)[p1]
+                val2 = sorted(ind)[p2]
+                rdf.ix[lab,'upper_lim_%s'%(st_type)] = val2
+                rdf.ix[lab,'lower_lim_%s'%(st_type)] = val1
+                if type(tstdf) == pandas.core.frame.DataFrame:
+                    p = resample_test(ind,lab,tstdf,vcol)
+                    if p != []:
+                        rdf.ix[lab,'resample_pvalue'] = p
+                        rdf.ix[lab,'test_value'] = tstdf.ix[lab,vcol]
+                        if p < resample:
+                            rdf.ix[lab,'resample_sig'] = 1
+                        else:
+                            rdf.ix[lab,'resample_sig'] = 0
+
+
         else:
             rdf.ix[lab,'appearances'] = 1
             rdf.ix[lab,'mean_%s'%(st_type)] = ind
             rdf.ix[lab,'sd_%s'%(st_type)] = np.nan
+            if resample:
+                rdf.ix[lab,'upper_lim_%s'%(st_type)] = np.nan
+                rdf.ix[lab,'lower_lim_%s'%(st_type)] = np.nan
+
+def resample_test(distrib,lab,tstdf,vcol):
+    slicer = []
+    if lab in tstdf.index.tolist():
+        tstval = tstdf.ix[lab,vcol]
+        for val in sorted(distrib):
+            if vcol == 'value':
+                if val > tstval:
+                    slicer.append(val)
+            elif vcol == 'pvalue':
+                if val < tstval:
+                    slicer.append(val)
+            else:
+                raise IOError('vcol not entered properly')
+        
+        p = len(slicer)/float(len(distrib))
+
+    else:
+        p = []
+
+    return p
 
 def extract_top_hit(rdf,df,vcol,thr_tp):
 
@@ -900,7 +1140,47 @@ def extract_top_hit(rdf,df,vcol,thr_tp):
         if thr_tp == 'rabs':
             if rdf.ix[hit,'tophit_sign'] != hitsign:
                 rdf.ix[hit,'tophit_sign'] = 'both'
+
+#def 
+
+def create_output_images(resdf,scldir,sclstr,outdir,outstr,input_tp,par=False):
+
+    if par:
+        resdf = parallel_in('coi','',par,'')
     
+    # determine analysis resolutions
+    sclz = []
+    for ind in resdf.index.tolist():
+        scl,jnk = ind.split(': ')
+        resdf.ix[ind,'scale'] = scl
+        resdf.ix[ind,'parcel'] = int(jnk)
+        if scl not in sclz:
+            sclz.append(scl)
+
+    for scl in sclz:
+        # prep inputs
+        indf = resdf.loc[resdf['scale'] == scl]
+        indf.index = indf[:]['parcel'].tolist()
+        nind = indf.index.tolist()
+        for i in range(int(scl)):
+            if i not in indf.index.tolist():
+                nind.append(i)
+        indf = indf.reindex(nind,fill_value=0)
+        for ind in indf.index.tolist():
+            if not pandas.notnull(indf.ix[ind,'top_hits']):
+                indf.ix[ind,'top_hits'] = 0
+        indf = indf.sort()
+        #### The line below should be imrpoved.... ######
+        scale_templ = glob(os.path.join(scldir,'%s*%s.*'%(sclstr,scale)))[0]
+        print 'making top_hits image for scale %s'%(scl)
+        wr.make_parcelwise_map(outdir,indf,scale_templ,
+            outfl=os.path.join(outdir,'%s_tophits_%s'%(outstr,scl)),add=True,col='top_hits')
+        print 'making appearances image for scale %s'%(scl)
+        wr.make_parcelwise_map(outdir,indf,scale_templ,
+            outfl=os.path.join(outdir,'%s_appearances_%s'%(outstr,scl)),add=True,col='appearances')
+        print 'making average coefficient image for scale %s'%(scl)
+        wr.make_parcelwise_map(outdir,indf,scale_templ,
+            outfl=os.path.join(outdir,'%s_average_coef_%s'%(outstr,scl)),add=True,col='mean_%s'%(input_tp))
 
 
 

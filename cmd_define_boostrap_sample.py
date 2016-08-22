@@ -28,17 +28,24 @@ if __name__ == '__main__':
 
     ###OPTIONS###
 
+    parser.add_argument('-resamp',default=False,
+        choices=[False,'False','subsamp','jackknife','permute','bootstrap'],
+        help='pick which resampling method you wish to use, if any')
+
+    parser.add_argument('-par',default=False,
+        help='if True, makes compatible for command line based parallelization')
+
+    parser.add_argument('-rand', default=False,
+        help='Seed for PRNG, or leave False to randomly generate seed')
+
+    parser.add_argument('-tid',default='',
+        help='used to keep track of id for parallelization')
+
     parser.add_argument('-perc',type=float,default=0.5,
         help='the percent of the total sample to be used in each subsample.')
 
     parser.add_argument('-gps',type=int,default=3,
         help='# of groups used to balance subsample on predictor variable.')
-
-    parser.add_argument('-par',type=bool,default=False,
-        help='if True, makes compatible for command line based parallelization')
-
-    parser.add_argument('-tid',default='',
-        help='used to keep track of id for parallelization')
 
     ###RUN###
 
@@ -47,9 +54,9 @@ if __name__ == '__main__':
         print help(bsc.define_bootstrap_sample)
     else:
         args = parser.parse_args()
-        if args.par == True:
-            scans,pv_vals,flpth=bsc.define_bootstrap_sample(args.ss[0],args.subcol[0],args.subpth[0],args.pv[0],args.outpth[0],args.perc,args.gps,args.par,args.tid)
+        if args.par:
+            scans,pv_vals,flpth=bsc.define_bootstrap_sample(args.ss[0],args.subcol[0],args.subpth[0],args.pv[0],args.outpth[0],args.resamp,args.par,args.rand,args.tid,args.perc,args.gps)
             print flpth
         else:
-            scans,pv_vals=bsc.define_bootstrap_sample(args.ss[0],args.subcol[0],args.subpth[0],args.pv[0],args.outpth[0],args.perc,args.gps,args.par,args.tid)
+            scans,pv_vals=bsc.define_bootstrap_sample(args.ss[0],args.subcol[0],args.subpth[0],args.pv[0],args.outpth[0],args.resamp,args.par,args.rand,args.tid,args.perc,args.gps)
 

@@ -64,6 +64,17 @@ def define_bootstrap_sample(ss,subcol,subpth,pv,outpth,resample=False,par=False,
     resample = check_bool(resample)
     rand = check_bool(rand)
 
+    if rand:
+        if type(rand) == str:
+            rand = int(rand)
+
+    if taskid:
+        if type(taskid) == str:
+            try:
+                taskid=int(taskid)
+            except:
+                taskid=taskidi
+
     # prep spreadsheet
 
     if type(num_gps) != int:
@@ -152,7 +163,7 @@ def randomize_4_montecarlo(seed,jumpseed,jump_mult,rsamp,replace=False):
 
     intp = type(rsamp[0])
     rs = rnd.RandomState(seed)
-    jumpseed = jumpseed * jump_mult
+    jumpseed = int(jumpseed * jump_mult)
     rs.jump(jumpseed)
     nrsamp = []
 
@@ -827,7 +838,7 @@ def collect_results(ss_dir,ss_str,ss_ext,outdir,outfl='',thr_tp='r',resample=Fal
     resample = if not False, will assess distribution of test statistics or
     pvalues (set with thr_tp) and output the lower percentage of this
     distribution, the value entered into resample (between 0 and 1, should be
-    something like 0.05 for a alpha of 0.05) divide by two (i.e. if resample is
+    something like 0.05 for a alpha of 0.05) divided by two (i.e. if resample is
     0.05, you would get the 2.5% and 97.5% values).
 
     permtest = If not False, use random sampling results to assess where in
@@ -863,6 +874,12 @@ def collect_results(ss_dir,ss_str,ss_ext,outdir,outfl='',thr_tp='r',resample=Fal
 
     resample = check_bool(resample)
     summary = check_bool(summary)
+
+    if resample:
+        if type(resample) == str:
+            resample = float(resample)
+        if resample > 1 or resample < 0:
+            raise ValueError('resample must either be a value between 1 and 0, or must be set to False')
 
     if type(permtest) == pandas.core.frame.DataFrame:
         compdf = permtest
@@ -1143,7 +1160,49 @@ def extract_top_hit(rdf,df,vcol,thr_tp):
 
 #def 
 
-def create_output_images(resdf,scldir,sclstr,outdir,outstr,input_tp,par=False):
+def create_output_images(resdf,scldir,sclstr,outdir,outstr,input_tp,output_tp='resamp',par=False):
+    '''Using results from function collect_results as input, will generate 
+    parcel-wise brain images as a spatial representation of results.
+
+    resdf = a pandas dataframe generated from function collect_results. Will be
+    ignored if par is not False.
+
+    scldir = a path pointing to the directory containing atlases for each
+    resolution represented in the results.
+
+    sclstr = string unique to the atlas such that 
+    [scldir]/[scstr][scale].* will successfully find each atlas
+
+    outdir = path to desired output directory
+
+    outstr = label to ID output images
+
+    input_tp = as of now, script will only create outputs for one "measure"
+    at a time. Indicate the type of measure (i.e. a valid value within the
+    measure column of the results). Example: 'rho'
+
+    output_tp = resamp = Will only output resampled p-value image
+                cross = Will output appearances and top hits, and average stat
+                ci = Will only output average stat
+                all = all output images will be generated
+
+    par = Path pointing to an input results spreadsheet. If False, will use
+    resdf as input. 
+
+
+    Script will output images depending on output_tp argument. If set to
+    resamp, an image indicating the resampled pvalue at each parcel will be
+    generated. If output_tp set to cross, images will be generated
+    representing # of top hits, # of appearances in thresholded results, and 
+    average statistic (i.e. r or p value) at each parcel, respectively. Passing
+    both will generate all images. 
+
+    Cross most appropriate if cross-validation performed with theshold.
+    CI most appropriate if jackknife or cross-validation performed w/o threshold.
+    resamp most appropriate if permute or bootstrap performed w/o threshold.
+
+    '''
+    
 
     if par:
         resdf = parallel_in('coi','',par,'')
@@ -1171,16 +1230,25 @@ def create_output_images(resdf,scldir,sclstr,outdir,outstr,input_tp,par=False):
                 indf.ix[ind,'top_hits'] = 0
         indf = indf.sort()
         #### The line below should be imrpoved.... ######
-        scale_templ = glob(os.path.join(scldir,'%s*%s.*'%(sclstr,scale)))[0]
-        print 'making top_hits image for scale %s'%(scl)
-        wr.make_parcelwise_map(outdir,indf,scale_templ,
-            outfl=os.path.join(outdir,'%s_tophits_%s'%(outstr,scl)),add=True,col='top_hits')
-        print 'making appearances image for scale %s'%(scl)
-        wr.make_parcelwise_map(outdir,indf,scale_templ,
-            outfl=os.path.join(outdir,'%s_appearances_%s'%(outstr,scl)),add=True,col='appearances')
-        print 'making average coefficient image for scale %s'%(scl)
-        wr.make_parcelwise_map(outdir,indf,scale_templ,
-            outfl=os.path.join(outdir,'%s_average_coef_%s'%(outstr,scl)),add=True,col='mean_%s'%(input_tp))
+        scale_templ = glob(os.path.join(scldir,'%s%s.*'%(sclstr,scl)))[0]
+        if output_tp == 'cross' or output_tp == 'all':
+            print 'making top_hits image for scale %s'%(scl)
+            wr.make_parcelwise_map(outdir,indf,scale_templ,
+                outfl=os.path.join(outdir,'%s_tophits_%s'%(outstr,scl)),add=True,col='top_hits')
+            print 'making appearances image for scale %s'%(scl)
+            wr.make_parcelwise_map(outdir,indf,scale_templ,
+                outfl=os.path.join(outdir,'%s_appearances_%s'%(outstr,scl)),add=True,col='appearances')
+        if output_tp == 'ci' or output_tp == 'all':
+                print 'making average coefficient image for scale %s'%(scl)
+                wr.make_parcelwise_map(outdir,indf,scale_templ,
+                    outfl=os.path.join(outdir,'%s_average_coef_%s'%(outstr,scl)),add=True,col='mean_%s'%(input_tp))
+        if output_tp == 'resamp' or output_tp == 'all':
+            if 'resample_pvalue' in indf.columns.tolist():
+                print 'making resample pvalue image for scale %s'%(scl)
+                wr.make_parcelwise_map(outdir,indf,scale_templ,
+                    outfl=os.path.join(outdir,'%s_resample_p_%s'%(outstr,scl)),add=True,col='resample_pvalue')
+            else:
+                raise IOError('resamp passed for argument output_tp, but no resampling statistics available')
 
 
 

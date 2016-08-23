@@ -843,7 +843,7 @@ def collect_results(ss_dir,ss_str,ss_ext,outdir,outfl='',thr_tp='r',resample=Fal
 
     permtest = If not False, use random sampling results to assess where in
     sampling distribution a value falls, and whether it is below an alpha 
-    threshold. Input can be a pandas dataframe or apath to a spreadsheet
+    threshold. Input can be a pandas dataframe or a path to a spreadsheet
     that has statistics from one sample (probably the original sample). Will
     use input of resample as the critical value.
 

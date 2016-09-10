@@ -32,16 +32,16 @@ if __name__ == '__main__':
     parser.add_argument('-out',type=str,default='r',choices=['r','t'],
         help='should script generate a tmap or rmap?')
 
-    parser.add_argument('-nonpar',type=bool,default=False,
+    parser.add_argument('-nonpar',default=False,
         help='run spearmans instead of pearson correlation')
 
     parser.add_argument('-tid',default='',
         help='used to keep track of id for parallelization')
 
-    parser.add_argument('-par',type=bool,default=True,
+    parser.add_argument('-par', default=True,
         help='set up for parallelization and copy input files')
 
-    parser.add_argument('-inter',type=bool,default=False,
+    parser.add_argument('-inter',default=False,
         help='save 4D volume used for analysis?')
 
     parser.add_argument('-indata',default=False,
@@ -54,5 +54,6 @@ if __name__ == '__main__':
         print help(bsc.voxelwise_analysis)
     else:
         args=parser.parse_args()
+
         outstr=bsc.voxelwise_analysis(scans=args.scans,pv_vals=args.vals,outfl=args.outfl[0],outdir=args.outdir[0],out_tp=args.out,nonpar=args.nonpar,taskid=args.tid,parallel=args.par,parin=args.parin[0],indata=args.indata,intermed=args.inter)
         print outstr

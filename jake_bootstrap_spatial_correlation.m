@@ -15,8 +15,8 @@ end
 
 % files_in
 files_in = psom_struct_defaults(files_in,...
-           { 'ss' , 'subpath', 'indir', 'norm_fl'         , 'mss'            },...
-           { NaN   , NaN     ,  NaN   , 'gb_niak_omitted' , 'gb_niak_omitted'});
+           { 'ss' , 'subpath', 'indir', 'norm_fl'         , 'xfm'            , 'mss'            },...
+           { NaN   , NaN     ,  NaN   , 'gb_niak_omitted' , 'gb_niak_omitted', 'gb_niak_omitted'});
 % options
 opt = psom_struct_defaults(opt,...
            { 'folder_out' , 'nb_samp' , 'label_out' , 'rand_seed' , 'flag_test', 'psom'    , 'dbs'     , 'va'     , 'scs'    , 'isr'    , 'cr'     , 'coi'   },...
@@ -73,7 +73,7 @@ for taskid = 1:opt.nb_samp
     dbs_name = sprintf('define_boostrap_samples_%d',taskid);
     dbs_in = files_in;
     dbs_opt = opt.dbs;
-    dbs_out = [opt.folder_out filesep sprintf('dbc_out%d.csv',taskid)];
+    dbs_out = [opt.folder_out filesep sprintf('dbc_out%d.xls',taskid)];
     
     pipe = psom_add_job(pipe, dbs_name, 'define_bootstrap_samples', dbs_in, dbs_out, dbs_opt);
     
@@ -100,7 +100,7 @@ for taskid = 1:opt.nb_samp
     scs_in.cov_img = va_out;
     scs_opt = opt.scs;
     %this line is a placeholder for psom. Also needs to be fixed so the 7 is a real number from inputs
-    scs_out = [opt.folder_out filesep sprintf('%s_scl7_res%d.csv',scs_opt.outstr,taskid)];
+    scs_out = [opt.folder_out filesep sprintf('%s_scl7_res%d.xls',scs_opt.outstr,taskid)];
 
     pipe = psom_add_job(pipe,scs_name, 'searchlight', scs_in, scs_out, scs_opt);
 
@@ -115,10 +115,8 @@ for taskid = 1:opt.nb_samp
     isr_in.dud = scs_out;
     isr_opt = opt.isr;
     isr_out = struct();
-    isr_out.outdir = opt.folder_out
-    if isr_opt.outtype ~= 'mast'
-        isr_out.samp = [opt.folder_out filesep sprintf('%s%s.csv',opt.label_out,taskid)];
-    end
+    %isr_out.outdir = opt.folder_out;
+    isr_out.samp = [opt.folder_out filesep sprintf('%s_thrres%d.xls',opt.label_out,taskid)];
     if isr_opt.outtype ~= 'samp'
         if size(files_in.mss)(1) > 0
             isr_out.mast = files_in.mss;
@@ -129,12 +127,15 @@ for taskid = 1:opt.nb_samp
     pipe = psom_add_job(pipe,isr_name,'id_sig_results',isr_in, isr_out, isr_opt);
 
     % load outputs into job cr files_in structure (actually just placeholders for psom dependencies)
-    cr_in.taskid = isr_out.samp;
+    cr_in.(int2str(taskid)) = isr_out.samp;
 end
 
 % if necessary, create test (original) data and results 
 if opt.cr.test
-    opt.dbs.tid = 'gb_niak_omitted';
+
+    ntid = opt.nb_samp + 1
+
+    opt.dbs.tid = ntid;
     opt.dbs.outdir = opt.folder_out;
     opt.dbs.flag_test = opt.flag_test;
     opt.dbs.rand = opt.rand_seed;
@@ -142,10 +143,10 @@ if opt.cr.test
     dbs_in = files_in;
     dbs_opt = opt.dbs;
     dbs_opt.resamp = 'False';
-    dbs_out = [opt.folder_out filesep 'dbc_out.csv'];
+    dbs_out = [opt.folder_out filesep sprintf('dbc_out%d.xls',ntid)];
     pipe = psom_add_job(pipe, dbs_name, 'define_bootstrap_samples', dbs_in, dbs_out, dbs_opt);
 
-    opt.va.tid = 'gb_niak_omitted';
+    opt.va.tid = ntid;
     opt.va.outdir = opt.folder_out;
     opt.va.outstr = 'TEST';
     opt.va.flag_test = opt.flag_test;
@@ -153,11 +154,11 @@ if opt.cr.test
     va_in = files_in;
     va_in.parin = dbs_out;
     va_opt = opt.va;
-    va_out = [opt.folder_out filesep sprintf('%s.nii',va_opt.outstr)];     
+    va_out = [opt.folder_out filesep sprintf('%s%d.nii',va_opt.outstr,ntid)];     
     pipe = psom_add_job(pipe,va_name, 'voxelwise_analysis', va_in, va_out, va_opt);
 
     % set up the options for function scs
-    opt.scs.tid = 'gb_niak_omitted'
+    opt.scs.tid = ntid;
     opt.scs.outdir = opt.folder_out;
     opt.scs.outstr = 'TEST';
     opt.scs.flag_test = opt.flag_test;
@@ -166,12 +167,12 @@ if opt.cr.test
     scs_in.cov_img = va_out;
     scs_opt = opt.scs;
     %this line is a placeholder for psom. Also needs to be fixed so the 7 is a real number from inputs
-    scs_out = [opt.folder_out filesep sprintf('%s_scl7_res.csv',scs_opt.outstr)];
+    scs_out = [opt.folder_out filesep sprintf('%s_scl7_res%d.xls',scs_opt.outstr,ntid)];
     pipe = psom_add_job(pipe,scs_name, 'searchlight', scs_in, scs_out, scs_opt);
 
    % set up options for function isr
-    opt.isr.tid = 'gb_niak_omitted';
-    opt.isr.outdir = opt.folder_out;
+    opt.isr.tid = ntid;
+    %opt.isr.outdir = opt.folder_out;
     opt.isr.outstr = 'TEST';
     opt.isr.flag_test = opt.flag_test;
     isr_name ='id_significant_results_test';
@@ -180,36 +181,36 @@ if opt.cr.test
     isr_in.dud = scs_out;
     isr_opt = opt.isr;
     isr_out = struct();
-    isr_out.outdir = opt.folder_out
-    isr_opt.outtype = 'samp'
-    isr_out.samp = [opt.folder_out filesep sprintf('%s.csv',isr_opt.outstr)];
+    %isr_out.outdir = opt.folder_out;
+    isr_opt.outtype = 'samp';
+    isr_out.samp = [opt.folder_out filesep sprintf('%s_thrres%d.xls',isr_opt.outstr,ntid)];
     
     pipe = psom_add_job(pipe,isr_name,'id_sig_results',isr_in, isr_out, isr_opt);
 
 else
-    opt.cr.test = 'False'
+    opt.cr.test = 'False';
 end
 
 % set up options for function cr
 
-cr_name = 'collect_results'
+cr_name = 'collect_results';
 cr_in.ssdir = opt.folder_out;
-if opt.cr.test ~= 'False'
-    cr_in.test = isr_out.samp
+if ~(strncmp(opt.cr.test,'False',4))
+    cr_in.test = isr_out.samp;
 end
 opt.cr.ssstr = opt.label_out;
-opt.cr.ssext = csv;
+opt.cr.ssext = 'xls';
 opt.cr.outdir = opt.folder_out;
 opt.cr.outfl = opt.label_out;
 opt.cr.flag_test = opt.flag_test;
 cr_opt = opt.cr;
 cr_out = struct();
-cr.out.pearson = [opt.folder_out filesep sprintf('%s_final_res%s.csv',cr_opt.outfl,'r')];
-cr.out.spearman = [opt.folder_out filesep sprintf('%s_final_res%s.csv',cr_opt.outfl,'rho')];
-if opt.scs.poly > 1:
-    cr.out.poly = [opt.folder_out filesep sprintf('%s_final_res%s.csv',cr_opt.outfl,'poly')];
+cr_out.pearson = [opt.folder_out filesep sprintf('%s_finalres%s.xls',cr_opt.outfl,'r')];
+cr_out.spearman = [opt.folder_out filesep sprintf('%s_finalres%s.xls',cr_opt.outfl,'rho')];
+if opt.scs.poly > 1
+    cr_out.poly = [opt.folder_out filesep sprintf('%s_finalres%s.xls',cr_opt.outfl,'poly')]
 end
-pipe = psom_add_job(pipe,cr_name,'collect_results',cr_in, cr_opt, cr_out);
+pipe = psom_add_job(pipe,cr_name,'collect_results',cr_in, cr_out, cr_opt);
 
 
 % set up options for functions coi
@@ -219,27 +220,35 @@ opt.coi.outdir = opt.folder_out;
 opt.coi.outstr = opt.label_out;
 opt.coi.flag_test = opt.flag_test;
 coi_opt = opt.coi;
-coi_out = opt.folder_out;
 
 coi_name = 'create_output_images_pearson';
-coi_in.resdf = cr.out.pearson;
+coi_in.resdf = cr_out.pearson;
 coi_opt.input = 'r';
-pipe = psom_add_job(pipe,coi_name,'create_output_images',coi_in,coi_opt,coi_out);
+%FOR TESTING! THIS NEEDS TO CHANGE!
+coi_out = [opt.folder_out filesep sprintf('%s_resample_p_%s7.nii.gz',coi_opt.outstr,coi_opt.input)];
+pipe = psom_add_job(pipe,coi_name,'create_output_images',coi_in,coi_out,coi_opt);
 
 coi_name = 'create_output_images_spearman';
-coi_in.resdf = cr.out.spearman;
+coi_in.resdf = cr_out.spearman;
 coi_opt.input = 'rho';
-pipe = psom_add_job(pipe,coi_name,'create_output_images',coi_in,coi_opt,coi_out);
+%FOR TESTING! THIS NEEDS TO CHANGE!
+coi_out = [opt.folder_out filesep sprintf('%s_resample_p_%s7.nii.gz',coi_opt.outstr,coi_opt.input)];
+pipe = psom_add_job(pipe,coi_name,'create_output_images',coi_in,coi_out,coi_opt);
 
-if opt.scs.poly > 1:
+if opt.scs.poly > 1
     coi_name = 'create_output_images_poly';
-    coi_in.resdf = cr.out.poly;
+    coi_in.resdf = cr_out.poly;
     coi_opt.input = 'poly';
-    pipe = psom_add_job(pipe,coi_name,'create_output_images',coi_in,coi_opt,coi_out);
+    %FOR TESTING! THIS NEEDS TO CHANGE!
+    coi_out = [opt.folder_out filesep sprintf('%s_resample_p_%s7.nii.gz',coi_opt.outstr,coi_opt.input)];
+    pipe = psom_add_job(pipe,coi_name,'create_output_images',coi_in,coi_out,coi_opt);
+end
 
 %% run the pipeline
 
 if ~opt.flag_test
+    opt.psom.qsub_options = '-A gsf-624-aa -q sw -l nodes=1:ppn=12 -l pmem=2700m -l walltime=12:00:00';
+    opt.psom.max_queued = 50;
     psom_run_pipeline(pipe,opt.psom)
 end
 

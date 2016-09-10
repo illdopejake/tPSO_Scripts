@@ -21,9 +21,9 @@ if opt.mthresh
 end
 
 subcmd = sprintf('python %s/cmd_id_sig_results.py',script_pth);
-cmd = sprintf(' %s %s -perc %s -tp %s -thr %s -outtp %s -res %s -mss %s -mthr %s -save %s -tid %d',...
+cmd = sprintf(' %s %s -outfl %s -perc %s -tp %s -thr %s -outtp %s -res %s -mss %s -mthr %s -save %s -tid %d',...
 				opt.outstr, opt.outdir,...
-				opt.perc, opt.type, opt.thresh, opt.outtype, opt.res, files_in.mss, opt.mthresh, opt.save, opt.tid);
+				opt.outstr, opt.perc, opt.type, opt.thresh, opt.outtype, opt.res, files_in.mss, opt.mthresh, opt.save, opt.tid);
 if ~opt.flag_test
     system(sprintf('%s%s',subcmd, cmd));
 end

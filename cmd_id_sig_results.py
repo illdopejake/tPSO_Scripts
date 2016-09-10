@@ -1,4 +1,4 @@
-ulmport sys
+import sys
 import argparse
 import bootstrap_spatial_correlations as bsc
 

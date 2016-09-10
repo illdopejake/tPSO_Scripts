@@ -297,7 +297,6 @@ def voxelwise_analysis(scans,pv_vals,outfl,outdir,out_tp='r',nonpar=False,taskid
     NOTE: As of now, script does not regress out confounding variables or mask
     analysis
     """
-
     nonpar = check_bool(nonpar)
     parallel = check_bool(parallel)
     indata = check_bool(indata)
@@ -322,21 +321,28 @@ def voxelwise_analysis(scans,pv_vals,outfl,outdir,out_tp='r',nonpar=False,taskid
             intfl = '%s_intfile'%(cde)
 
         # create 4D volume
-        cmd = 'fslmerge -t %s'%(os.path.join(outdir,intfl))
+#        cmd = 'fslmerge -t %s'%(os.path.join(outdir,intfl))
+#        for scn in scans:
+#            cmd = cmd+' %s'%(scn)
+
+#        print 'creating input 4D volume...'
+#       os.system(cmd)
+
+#        print 'loading data'
+#        data = ni.load(os.path.join(outdir,'%s.nii.gz'%(intfl))).get_data()
+
+        print 'create 4D volume'
+
+        to_make = []
         for scn in scans:
-            cmd = cmd+' %s'%(scn)
+            nscn = ni.load(scn).get_data()
+            to_make.append(nscn)
+        data = np.concatenate([aux[..., None] for aux in to_make], axis=3)
 
-        if not parallel:
-            print 'creating input 4D volume...'
-        os.system(cmd)
 
-        if not parallel:
-            print 'loading data'
-        data = ni.load(os.path.join(outdir,'%s.nii.gz'%(intfl))).get_data()
 
     # run voxelwise analysis
-    if not parallel:
-        print 'beginning analysis...'
+    print 'beginning analysis...'
     x,y,z,t_dim = data.shape
     results = np.zeros((x,y,z))
     aff = ni.load(scans[0]).affine
@@ -355,13 +361,11 @@ def voxelwise_analysis(scans,pv_vals,outfl,outdir,out_tp='r',nonpar=False,taskid
                     if out_tp == 't':
                         r = convert_r2t(r,t_dim)
                     results[xind,yind,zind] = r
-        if not parallel:
-            print 'finished %s/%s job clusters'%(xind,x)
+        print 'finished %s/%s job clusters'%(xind,x)
 
     # write image
     outstr = '%s%s'%(os.path.join(outdir,outfl),taskid)
-    if not parallel:
-        print 'writing image to %s'%(outstr)
+    print 'writing image to %s'%(outstr)
     nimg = ni.Nifti1Image(results,aff)
     ni.save(nimg,outstr)
     outstr = outstr+'.nii'
@@ -372,7 +376,7 @@ def voxelwise_analysis(scans,pv_vals,outfl,outdir,out_tp='r',nonpar=False,taskid
 
     return outstr
 
-def spatial_correlation_searchlight_from_NIAK_GLMs(indir,cov_img,outdir,contrast,templ_str,scalestr='scale',norm=False,eff='t',poly=1,taskid='',save=False):
+def spatial_correlation_searchlight_from_NIAK_GLMs(indir,cov_img,outdir,contrast,templ_str,scalestr='scale',norm=False,xfm=False,eff='t',poly=1,taskid='',save=False):
     '''
     Given a directory containing a) NIAK glm.mat files at multiple scales, b) atlases at
     the same resolutions, and a covariate image, this function will do the
@@ -400,7 +404,7 @@ def spatial_correlation_searchlight_from_NIAK_GLMs(indir,cov_img,outdir,contrast
 
     norm = If set to a path, will normalize cov_img to target image that path
     points to. Uses flirt with nearest neighbour interpolation.  If False, no
-    normalization will occur
+    normalization will occur. Acceptable inputs are nii or xfm files
 
     eff = if set to 'r', will take values within the 'eff' structure of the
     glm.mat file. If set to 't' will take values within the 'ttest' structure
@@ -431,8 +435,18 @@ def spatial_correlation_searchlight_from_NIAK_GLMs(indir,cov_img,outdir,contrast
     cde = wr.codegen(6)
 
     if norm:
-        print 'normalizing tmap to fmri space'
-        os.system('flirt -interp nearestneighbour -in %s -ref %s -out %s/%s_rtmap'%(cov_img,norm,outdir,cde))
+	print 'normalizing tmap to fmri space'
+	# get rid of nans if necessary
+	data = ni.load(cov_img).get_data()
+	if not pandas.notnull(data[0][0][0]):
+	    nimg = os.path.join(outdir,'%s_ncov'%(cde))
+	    os.system('fslmaths %s -nan %s'%(cov_img,nimg))
+	    cov_img = '%s.nii.gz'%(nimg)	
+
+        if xfm:
+	    os.system('flirt -interp nearestneighbour -in %s -ref %s -applyxfm -init %s -out %s/%s_rtmap'%(cov_img,norm,xfm,outdir,cde))
+      	else:
+            os.system('flirt -interp nearestneighbour -in %s -ref %s -out %s/%s_rtmap'%(cov_img,norm,outdir,cde))
         cov_img = os.path.join(outdir,'%s_rtmap.nii.gz'%(cde))
 
     glmz = glob(os.path.join(indir,'glm*.mat'))
@@ -513,6 +527,7 @@ def id_sig_results(dfz,outdir,outfl='outfl',perc_thr='top',thr_tp='r',thr='',out
     '''
 
     # check inputs
+
     par = check_bool(par)
     parsave = check_bool(parsave)
     acc_vals = ['r','rho','poly', 'all']
@@ -628,7 +643,10 @@ def id_sig_results(dfz,outdir,outfl='outfl',perc_thr='top',thr_tp='r',thr='',out
                     thr = sorted(vec)[frac]
                     print 'acquiring top results, p < %s'%(thr)
                 else:
-                    thr = sorted(vec)[-(frac+1)]
+                    if thr == 1.0:
+                        thr = sorted(vec)[-(frac)]
+                    else:
+                        thr = sorted(vec)[-(frac+1)]
                     print 'acquiring top results, r > %s'%(thr)
 
     # Extract results
@@ -699,7 +717,7 @@ def id_sig_results(dfz,outdir,outfl='outfl',perc_thr='top',thr_tp='r',thr='',out
     # save results
 
     if out_tp != 'mast':
-        outstr = os.path.join(outdir,'%s%s.xls'%(outfl,taskid))
+        outstr = os.path.join(outdir,'%s_thrres%s.xls'%(outfl,taskid))
         print 'writing results to spreadsheet at %s'%(outstr)
         resdf.to_excel(outstr)
 
@@ -712,7 +730,7 @@ def update_spreadsheet(indf,scl,x,y,res_tp,v='',df_tp='samp',res_count=0,taskid=
     generated spreadsheet'''
 
     res_dict = {'r': 0, 'rho': 2}
-    if len(indf.columns.tolist()) > 8:
+    if res_tp == 'all' or res_tp == 'poly':
         res_dict.update({'poly': 4})
 
     if df_tp == 'samp':
@@ -758,14 +776,18 @@ def parallel_in(func,outdir,ipt1,ipt2,ipt3=''):
         idf = pandas.ExcelFile(ipt1).parse('Sheet1')
         scans = idf.index.tolist()
         pv_vals = idf[:]['pv_vals'].tolist()
-        os.system('rm %s'%(ipt1))
+        #os.system('rm %s'%(ipt1))
 
         for ind,scan in enumerate(scans):
-            if scan[-1] == 'z':
+            if len(str(ind)) == 1:
+		ind = '00%s'%(ind)
+	    elif len(str(ind)) == 2:
+		ind = '0%s'%(ind)
+	    if scan[-1] == 'z':
                 os.system('cp %s %s/%s_subject%s.nii.gz'%(scan,outdir,ipt2,ind))
             else:
                 os.system('cp %s %s/%s_subject%s.nii'%(scan,outdir,ipt2,ind))
-        scans = glob(os.path.join(outdir,'%s_*'%(ipt2)))
+        scans = sorted(glob(os.path.join(outdir,'%s_*'%(ipt2))))
 
         return scans,pv_vals
 
@@ -871,7 +893,6 @@ def collect_results(ss_dir,ss_str,ss_ext,outdir,outfl='',thr_tp='r',resample=Fal
     chance    
 
     '''
-
     resample = check_bool(resample)
     summary = check_bool(summary)
 
@@ -891,16 +912,19 @@ def collect_results(ss_dir,ss_str,ss_ext,outdir,outfl='',thr_tp='r',resample=Fal
                     compdf = pandas.read_csv(permtest)
                     compdf.index = compdf[:][compdf.columns[0]].tolist()
                 else:
-                    compdf = pandsa.ExcelFile(permtest)
+                    print permtest
+                    compdf = pandas.ExcelFile(permtest).parse('Sheet1')
             else:
                 raise ValueError('input for permtest invalid. Please pass a pandas dataframe or a path to a spreadsheet')
+
+    compdf = remove_redundancy_labels(compdf)
 
     if thr_tp == 'r' or 'rabs':
         vcol = 'value'
     elif thr_tp == 'p':
         vcol = 'pvalue'
 
-    ssz = sorted(glob(os.path.join(ss_dir,'%s*.%s'%(ss_str,ss_ext))))
+    ssz = sorted(glob(os.path.join(ss_dir,'%s_thrres*.%s'%(ss_str,ss_ext))))
 
     # concat all frames for information and top results
     print 'concatenating frames'
@@ -1042,18 +1066,22 @@ def collect_results(ss_dir,ss_str,ss_ext,outdir,outfl='',thr_tp='r',resample=Fal
                     extract_top_hit(rdf,ndf,vcol,thr_tp)
 
     # save results
-    print 'spreadsheet being written to %s'%(outdir)
+    
     if len(st_typez) == 1:
         if ss_ext[0] == 'x':
             rdf.to_excel(os.path.join(outdir,'%s_finalres.xls'%(outfl)))
+            print 'spreadsheet being written to %s_finalres.xls'%(outfl)
         else:
             rdf.to_csv(os.path.join(outdir,'%s_finalres.csv'%(outfl)))
+            print 'spreadsheet being written to %s_finalres.csv'%(outfl)
     else:
         for tp,rdf in rdfz.iteritems():
             if ss_ext[0] == 'x':
                 rdf.to_excel(os.path.join(outdir,'%s_finalres%s.xls'%(outfl,tp)))
+                print 'spreadsheet being written to %s_finalres%s.xls'%(outfl,tp)
             else:
-                rdf.to_csv(os.path.join(outdir,'%s_finalres%s.csv'%(outfl,tp)))            
+                rdf.to_csv(os.path.join(outdir,'%s_finalres%s.csv'%(outfl,tp)))  
+                print 'spreadsheet being written to %s_finalres%s.csv'%(outfl,tp)          
 
 def remove_redundancy_labels(df):
     '''for its own reasons, id_sig_results creates separate labels for
@@ -1234,19 +1262,19 @@ def create_output_images(resdf,scldir,sclstr,outdir,outstr,input_tp,output_tp='r
         if output_tp == 'cross' or output_tp == 'all':
             print 'making top_hits image for scale %s'%(scl)
             wr.make_parcelwise_map(outdir,indf,scale_templ,
-                outfl=os.path.join(outdir,'%s_tophits_%s'%(outstr,scl)),add=True,col='top_hits')
+                outfl=os.path.join(outdir,'%s_tophits_%s%s'%(outstr,input_tp,scl)),add=True,col='top_hits')
             print 'making appearances image for scale %s'%(scl)
             wr.make_parcelwise_map(outdir,indf,scale_templ,
-                outfl=os.path.join(outdir,'%s_appearances_%s'%(outstr,scl)),add=True,col='appearances')
+                outfl=os.path.join(outdir,'%s_appearances_%s%s'%(outstr,input_tp,scl)),add=True,col='appearances')
         if output_tp == 'ci' or output_tp == 'all':
                 print 'making average coefficient image for scale %s'%(scl)
                 wr.make_parcelwise_map(outdir,indf,scale_templ,
-                    outfl=os.path.join(outdir,'%s_average_coef_%s'%(outstr,scl)),add=True,col='mean_%s'%(input_tp))
+                    outfl=os.path.join(outdir,'%s_average_coef_%s%s'%(outstr,input_tp,scl)),add=True,col='mean_%s'%(input_tp))
         if output_tp == 'resamp' or output_tp == 'all':
             if 'resample_pvalue' in indf.columns.tolist():
                 print 'making resample pvalue image for scale %s'%(scl)
                 wr.make_parcelwise_map(outdir,indf,scale_templ,
-                    outfl=os.path.join(outdir,'%s_resample_p_%s'%(outstr,scl)),add=True,col='resample_pvalue')
+                    outfl=os.path.join(outdir,'%s_resample_p_%s%s'%(outstr,input_tp,scl)),add=True,col='resample_pvalue')
             else:
                 raise IOError('resamp passed for argument output_tp, but no resampling statistics available')
 

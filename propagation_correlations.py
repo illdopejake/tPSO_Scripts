@@ -59,23 +59,26 @@ def make_parcelwise_map(wpth,rdf,scale_templ, outfl, add = False, col = ''):
 
     if not col:
         col = rdf.columns[0]
-    for x in rdf.index.tolist():
-        if add:
-            i = x+1
-        else:
-            i = x
-        val = rdf.ix[x,col]
-        os.system('fslmaths %s -thr %s %s1'%(scale_templ,i,cde))
-        os.system('fslmaths %s1.nii.gz -uthr %s %s2'%(cde,i,cde))
-        os.system('fslmaths %s2.nii.gz -div %s2.nii.gz %s3'%(cde,cde,cde))
-        if x == rdf.index.tolist()[0]:
-            os.system('fslmaths %s3.nii.gz -mul %s %s'%(cde,val,outfl))
-        else:
-            os.system('fslmaths %s3.nii.gz -mul %s %s4'%(cde,val,cde))
-            os.system('fslmaths %s4.nii.gz -add %s.nii.gz %s'%(cde,outfl,outfl))
-        print 'seed %s built'%(i)
-    os.system('rm %s*'%(cde))
-    os.chdir(oldpth)
+    if os.path.isfile(scale_templ):
+        for x in rdf.index.tolist():
+            if add:
+                i = x+1
+            else:
+                i = x
+            val = rdf.ix[x,col]
+            os.system('fslmaths %s -thr %s %s1'%(scale_templ,i,cde))
+            os.system('fslmaths %s1.nii.gz -uthr %s %s2'%(cde,i,cde))
+            os.system('fslmaths %s2.nii.gz -div %s2.nii.gz %s3'%(cde,cde,cde))
+            if x == rdf.index.tolist()[0]:
+                os.system('fslmaths %s3.nii.gz -mul %s %s'%(cde,val,outfl))
+            else:
+                os.system('fslmaths %s3.nii.gz -mul %s %s4'%(cde,val,cde))
+                os.system('fslmaths %s4.nii.gz -add %s.nii.gz %s'%(cde,outfl,outfl))
+            print 'seed %s built'%(i)
+        os.system('rm %s*'%(cde))
+        os.chdir(oldpth)
+    else:
+        raise IOError('image %s not found'%(scale_templ))
 
 def img_2_maskd_array(img):
     msk = np.array(ni.load(img).get_data()).flatten()

@@ -44,7 +44,7 @@ if __name__ == '__main__':
 
     if len(sys.argv) < 4:
         parser.print_help()
-        print help(bsc.define_bootstrap_sample)
+        print help(bsc.collect_results)
     else:
         args = parser.parse_args()
         bsc.collect_results(ss_dir=args.ssdir[0],ss_str=args.ssstr[0],ss_ext=args.ssext[0],outdir=args.outdir[0],outfl=args.outfl,thr_tp=args.thr,resample=args.resamp,permtest=args.test,summary = args.sum)

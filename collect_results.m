@@ -8,7 +8,7 @@ warning on backtrace
 
 script_pth = '/gs/scratch/jvogel44/bsc/scripts';
 if ~opt.flag_test
-    system(sprintf('python %s/cmd_define_boostrap_sample.py %s %s %s %s -outfl %s -thr %s -resamp %s -test %s -sum %s',...
+    system(sprintf('python %s/cmd_collect_results.py %s %s %s %s -outfl %s -thr %s -resamp %s -test %s -sum %s',...
 				    script_pth, files_in.ssdir, opt.ssstr, opt.ssext, opt.outdir,...
-				    opt.outfl, opt.thr, opt.resamp, opt.test, opt.sum))
+				    opt.outfl, opt.thr, opt.resamp, files_in.test, opt.sum))
 end

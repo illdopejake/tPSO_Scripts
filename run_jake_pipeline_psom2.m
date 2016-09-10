@@ -5,24 +5,25 @@ clear all
 %   1. For any of the cmd_* functions, into your shell, type 'python [func_name]'
 %   2. Open python or ipython. Import boostrap_spatial_correlation. Type help(func_name) 
 
-addpath(genpath('/gs/project/gsf-624-aa/quarantaine/niak-boss-0.12.18/'));
-%addpath(genpath('/gs/project/gsf-624-aa/quarantaine/niak-dev-0.14.0'))
+%addpath(genpath('/gs/project/gsf-624-aa/quarantaine/niak-boss-0.12.18/'));
+addpath(genpath('/gs/project/gsf-624-aa/quarantaine/niak-dev-0.14.0'))
 addpath(genpath('/gs/scratch/jvogel44/bsc/scripts/'));
 
 %%%SET INPUT FILES%%%
 
 files_in.ss = '/gs/scratch/jvogel44/bsc/stopad_updated_csf_fMRI_edited.csv';
-files_in.subpath = '/gs/scratch/jvogel44/bsc/gm_files/';
+files_in.subpath = '/gs/scratch/jvogel44/bsc/gm_files_raw_real/';
 files_in.indir = '/gs/scratch/jvogel44/bsc/indir/';
 files_in.norm_fl = '/gs/scratch/jvogel44/bsc/rMNI152_T1_2mm_brain.nii';
+files_in.xfm = '/gs/scratch/jvogel44/bsc/indir/bsc_tfm'
 %files_in.mss=
 
 %%%SET PIPELINE OPTIONS%%%
 
-opt.folder_out = '/gs/scratch/jvogel44/bsc/results/full';
-opt.label_out = 'fulltst';
+opt.folder_out = '/gs/scratch/jvogel44/bsc/results/bsc_perm_1000_yc_raw_20160908';
+opt.label_out = 'raw';
 opt.rand_seed = 1;
-opt.nb_samp = 2;
+opt.nb_samp = 1000;
 opt.flag_test = false;
 
 %%%SET INPUTS AND OPTIONS FOR DEFINE BOOTSTRAP SAMPLE%%%

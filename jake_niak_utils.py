@@ -1,8 +1,9 @@
 import os
 from glob import glob
-from scipy.io import loadmat
+from scipy.io import loadmat,savemat
 import pandas
 import numpy as np
+import math
 
 def reshuffle_matrix(array,scale_n,var=False):
     pdict = {}
@@ -181,3 +182,98 @@ def determine_top_connections(df,seed,typ = 'fdr',perc=0.01):
     top_cs = pandas.DataFrame(top_dict,index = ['p'])
 
     return top_cs
+
+def lvec2mat(vec):
+
+    '''THIS DOESNT WORK AND I DONT KNOW WHY'''
+    M = len(vec)
+    N = int(round((-1+math.sqrt(1+8*M))/2))
+
+    mat = np.zeros((N,N))
+
+    mask_l = np.tril(np.ones(N))
+    mask_l = mask_l > 0
+
+    mat[mask_l] = vec
+    mask_l = mask_l.transpose()
+    mask_l[np.identity(mask_l.shape[0])>0] = 0
+    mat2 = mat.transpose()
+    mat[mask_l] = mat2[mask_l];
+
+    return mat
+
+def get_rvalues_from_glm_niak(glm,seeds,conns,otpt=False):
+
+    mat = loadmat(glm)
+    subs = []
+    for i in range(len(mat['model_group'][0][0][2])):
+        subs.append(mat['model_group'][0][0][2][i][0][0])
+
+    submatz = {}
+    for i,sub in enumerate(subs):
+        mtx = lvec2mat(mat['model_group'][0][0][1][i])
+        submatz.update({sub: mtx})
+
+    res = {}
+    for seed in seeds:
+#        df = pandas.DataFrame(np.full((len(subs),len(conns)),np.nan),index=subs)
+        df = pandas.DataFrame(index=subs)
+        for sub in df.index.tolist():
+            for conn in conns:
+                df.ix[sub,'reg%s'%(conn)] = submatz[sub][seed-1][conn-1]
+        res.update({'seed%s'%(seed): df})
+
+        if otpt:
+            df.to_excel('%s_seed%s.xls'%(otpt,seed))
+
+    return res
+
+def get_rvalues_from_glm(glm,scale,seeds,conns,otpt=False):
+    mat = loadmat(glm)
+    subs = []
+    for i in range(len(mat['model_group'][0][0][2])):
+        subs.append(mat['model_group'][0][0][2][i][0][0])
+
+    submatz = {}
+    for i,sub in enumerate(subs):
+        mtx = reshuffle_matrix(mat['model_group'][0][0][1][i],scale)
+        submatz.update({sub: mtx})
+
+    res = {}
+    for seed in seeds:
+        df = pandas.DataFrame(index=subs)
+        for sub in df.index.tolist():
+            for conn in conns:
+                if seed < conn or seed == conn:
+                    df.ix[sub,'reg%s'%(conn)] =submatz[sub][((seed),(conn))]
+                else:
+                    df.ix[sub,'reg%s'%(conn)] = submatz[sub][((conn),(seed))]
+        res.update({'seed%s'%(seed): df})
+
+        if otpt:
+            df.to_excel('%s_seed%s.xls'%(otpt,seed))
+
+    return res
+
+def get_all_rvalues_from_glm(glm,scale,otpt=False,otpt_tp = 'mat'):
+    mat = loadmat(glm)
+    subs = []
+    for i in range(len(mat['model_group'][0][0][2])):
+        subs.append(mat['model_group'][0][0][2][i][0][0])
+
+    submatz = {}
+    for i,sub in enumerate(subs):
+        print 'working on subject %s'%(sub)
+        mdict = reshuffle_matrix(mat['model_group'][0][0][1][i],scale)
+        mtx = np.full((444,444),np.nan)
+        for k,v in mdict.iteritems():
+            mtx[(k[1]-1)][(k[0]-1)] = mdict[(k[0],k[1])]
+            mtx[(k[0]-1)][(k[1]-1)] = mdict[(k[0],k[1])]
+        submatz.update({sub: mtx})
+
+    if otpt:
+        if otpt_tp == 'mat':
+            savemat(otpt,submatz)
+
+    else:
+        return submatz

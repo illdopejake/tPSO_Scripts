@@ -5,7 +5,7 @@ import pandas
 import subprocess
 import random,string
 import scipy.stats.stats as st
-import matplotlib.pyplot as plt
+#import matplotlib.pyplot as plt
 import jake_niak_utils as jni
 from scipy.io import loadmat
 from glob import glob
@@ -127,7 +127,7 @@ def in_out_mask_ttest_from_conn_map(wpth,rseedz, imsk, omsk):
 
     return df
 
-def in_out_mask_ttest_from_glm_file(wpth,scale_path,contrast,scale,imsk,omsk,parcel_img,membership=[],conndf=''):
+def in_out_mask_ttest_from_glm_file(wpth,scale_path,contrast,scale,imsk,omsk,parcel_img,eff='ttest',membership=[],conndf=''):
 
     oldpth = pthswp(wpth)
     tdf = pandas.DataFrame(np.zeros((scale,4)), columns=['t','p','wt','wp'])
@@ -165,7 +165,7 @@ def in_out_mask_ttest_from_glm_file(wpth,scale_path,contrast,scale,imsk,omsk,par
     if type(conndf) == pandas.core.frame.DataFrame:
         df = conndf
     else:
-        df = jni.create_df_from_glm(scale_path,contrast,pval=0.1)
+        df =jni.create_df_from_mat(scale_path,scale,pval=0.1,eff_tp=eff,mat_tp = 'glm')
 
     for i in range(scale):
         print 'calculating values for seed %s'%(i+1)
@@ -183,9 +183,9 @@ def in_out_mask_ttest_from_glm_file(wpth,scale_path,contrast,scale,imsk,omsk,par
             else:
                 conn = y[0]
             if conn in inseedz:
-                ivalz.append(df.ix[y,'eff'])
+                ivalz.append(df.ix[y,eff])
             elif conn in outseedz:
-                ovalz.append(df.ix[y,'eff'])
+                ovalz.append(df.ix[y,eff])
         invec = np.array(ivalz)
         outvec = np.array(ovalz)
         t,p = st.ttest_ind(invec,outvec)
@@ -194,6 +194,7 @@ def in_out_mask_ttest_from_glm_file(wpth,scale_path,contrast,scale,imsk,omsk,par
         tdf.ix[(i+1),'p'] = p
         tdf.ix[(i+1),'wt'] = wt
         tdf.ix[(i+1),'wp'] = wp
+        tdf.ix[(i+1),'gof'] = np.mean(invec) / np.mean(outvec)
 
     os.chdir(oldpth)
 
@@ -378,7 +379,7 @@ def create_sliding_window_images(pan,scale_templ,outdir,outfl,add=False):
         connex = ndf.mean(axis=0).to_frame()
         make_parcelwise_map(outdir,connex,scale_templ,outfl=os.path.join(outdir,'%s%s'%(outfl,i)),add=add)
 
-def identify_labels_within_mask(wpth,networks,mask,as_int=True):
+def identify_labels_within_mask(wpth,networks,mask,thr=0.51,as_int=True):
     """networks is a list of paths to labeled atlases
     mask is a path to an image you wish to mask atlas with
     leave as_int true if you want label values to be returned as integers"""
@@ -402,12 +403,43 @@ def identify_labels_within_mask(wpth,networks,mask,as_int=True):
                 else:
                     unique.append(vox)
 
+        # trim
+        print 'refining'
+        for parc in unique:
+            os.system('fslmaths %s -uthr %s -thr %s %s'%(net, parc, parc, cde))
+            vol = subprocess.check_output('fslstats %s.nii.gz -V'%(cde),shell = True).rsplit()[0]
+            os.system('fslmaths %s.nii.gz -mas %s %s_1'%(cde,mask,cde))
+            nvol = subprocess.check_output('fslstats %s_1.nii.gz -V'%(cde),shell=True).rsplit()[0]
+            print parc, (float(nvol) / float(vol))
+            if float(nvol) == 0 or not pandas.notnull(nvol) or (float(nvol) / float(vol)) < thr:
+                unique.remove(parc)
+                print 'removing %s'%(parc)
+
         labels_out.update({net: unique})
 
     os.system('rm %s'%(nimg))
     os.chdir(oldpth)
 
     return labels_out
+
+"""I used the following code to produce these networks for all atlases in
+cambridge and write them to spreadsheets:
+netz = sorted(glob('/Users/jakevogel/bellec_lab/mask_for_glms/scale7_network*'))
+networks = sorted(glob('/Users/jakevogel/bellec_lab/aaic/density/networks_scale*'))
+netdicts = {}
+for i,net in enumerate(netz):
+    parx = wr.identify_labels_within_mask(wpth,networks,net)
+    netdicts.update({(i+1): parx})
+for scl in networks:
+    num = scl.split('scale')[-1].split('.')[0]
+    memdf = pandas.DataFrame(index=range(1,int(num)+1),columns=['membership'])
+    for parc in memdf.index.tolist():
+        for net in range(1,8):
+            if parc in netdicts[net]['/Users/jakevogel/bellec_lab/aaic/density/networks_scale%s.nii.gz'%(num)]:
+                memdf.ix[parc,'membership'] = netnm[str(net)]
+    memdf.to_excel('network_membership_scale%s.xls'%(num))
+    print 'finished scale%s'%(num)
+"""
 
 def extract_data_from_specific_connections(labels,glm_key,outfl):
     """labels is a dict produced from the above function, with key = path to

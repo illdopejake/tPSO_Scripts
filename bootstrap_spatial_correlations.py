@@ -8,55 +8,67 @@ import scipy.stats.stats as st
 import randomstate.prng.mrg32k3a as rnd
 import propagation_correlations as wr
 
-def define_bootstrap_sample(ss,subcol,subpth,pv,outpth,resample=False,par=False,rand=False,taskid = '',sample_perc=0.5,num_gps=3):
-    """takes an existing sample of subjects from a spreadsheet and creates a
-    subsample, balanced by a variable. Outputs a subsamble membership txt file and
-    a list of paths corresponding to subsample member scans)
+def define_bootstrap_sample(ss,subcol,subpth,pv,outpth,resample=False,
+                            par=False,rand=False,taskid = '',sample_perc=0.5,
+                            num_gps=3):
+    """takes an existing sample of subjects from a spreadsheet and 
+    creates a subsample, balanced by a variable. Outputs a 
+    subsamble membership txt file and a list of paths corresponding 
+    to subsample member scans)
 
-    ss = a spreadsheet containing at least a list of subjects and values for a
-    predictor variable
+    ss = a spreadsheet containing at least a list of subjects and 
+    values for a predictor variable
 
-    subcol = string corresponding to the label of the column containing values for
-    the subject IDs. Note these IDs should be consistent with existing file names
-    in subpth. If index, set to 'index'
+    subcol = string corresponding to the label of the column 
+    containing values for the subject IDs. Note these IDs should be 
+    consistent with existing file names in subpth. If index, set to 
+    'index'
 
-    subpth = a path pointing to the directory containing subject scans
+    subpth = a path pointing to the directory containing subject 
+    scans
 
     outpth = desired output directory
 
     resample =  False = Do not resample data.
-                subsamp = Take random subsample of data distributed across pv.*
+                subsamp = Take random subsample of data distributed 
+                across pv.*
                 * Use sample_perc and num_gps to control parameters
                 jackknife = sample using the leave-one-out method
-                permute = randomly shuffle sample without replacement
+                permute = randomly shuffle sample without 
+                replacement
                 bootstrap = radnomly shuffle sample with replacement
 
-    pv = string corresponding to the label of the column containing values for the
-    predictor variable
+    pv = string corresponding to the label of the column containing 
+    values for the predictor variable
 
-    par = if True, makes compatible for command line based parallelization
+    par = if True, makes compatible for command line based 
+    parallelization
 
-    task_id = used to keep track of id in the case of multiple bootstrap samples
+    task_id = used to keep track of id in the case of multiple 
+    bootstrap samples
 
-    rand = Determine how psuedorandom generator is seeded for the randomization
-    of the sample. Leave as False to use random.shuffle with a random seed, 
-    which will create unreproducible samples and is not recommended for 
-    parallelization. Set as an int to use int as seed for mrg322ka PRNG 
-    (recommended for parallelization or reproducible results)
+    rand = Determine how psuedorandom generator is seeded for the 
+    randomization of the sample. Leave as False to use 
+    random.shuffle  with a random seed, which will create 
+    unreproducible samples and  is not recommended for 
+    parallelization. Set as an int to use int as seed for mrg322ka 
+    PRNG  (recommended for parallelization or reproducible results)
 
-    sample_perc = For subsamp method, the percent of the total sample to be 
-    used in each subsample. Default is 0.5 for 50%. Must be float >0 and <=1
+    sample_perc = For subsamp method, the percent of the total 
+    sample to be used in each subsample. Default is 0.5 for 50%. 
+    Must be float >0 and <=1
 
-    num_gps = For subsamp method, the number of groups used to balance 
-    subsample on predictor variable. Default is 3. Value must be int
+    num_gps = For subsamp method, the number of groups used to 
+    balance subsample on predictor variable. Default is 3. Value 
+    must be int
 
-    Outputs a list of paths and a vector containing the values for the
-    predictor variable
+    Outputs a list of paths and a vector containing the values for 
+    the predictor variable
 
     ***IMPORTANT NOTE***
     Script has the following assumptions:
-    1) scans in subpth directory have ids from subcol in them, but the filename of
-    the scan does not /start/ with the id.
+    1) scans in subpth directory have ids from subcol in them, but
+     the filename of the scan does not /start/ with the id.
     2) There are no more than 1 scan per ID within subpth directory
     """
 
@@ -73,39 +85,43 @@ def define_bootstrap_sample(ss,subcol,subpth,pv,outpth,resample=False,par=False,
             try:
                 taskid=int(taskid)
             except:
-                taskid=taskidi
+                taskid=taskid
 
     # prep spreadsheet
 
     if type(num_gps) != int:
-        raise IOError('numgps must be an integer')
+        raise TypeError('num_gps must be an integer')
 
     if sample_perc > 1 or sample_perc <=0:
-        raise IOError('sample_perc must be a float between 0 and 1')
+        raise ValueError('sample_perc must be a float between 0 and 1')
 
     if ss[-3:] == 'xls' or ss[-4:] == 'xlsx':
         subdf = pandas.ExcelFile(ss).parse('Sheet1')
     elif ss[-3:] == 'csv':
         subdf = pandas.read_csv(ss)
     else:
-        raise IOError('input spreadsheet filetype not recognized. Please use .xls, .xlsx or .csv')
+        raise ValueError(
+        'input spreadsheet filetype not recognized. Please use .xls, .xlsx or .csv')
 
     if subcol != 'index':
         if subcol in subdf.columns.tolist():
             subdf.index = subdf[:][subcol].tolist()
         else:
-            raise IOError('there is no column in the spreadsheet called %s'%(subcol))
+            raise ValueError('there is no column in the spreadsheet called %s'%
+                                                                    (subcol))
 
     for sub in subdf.index.tolist():
         if len(glob(os.path.join(subpth,'*%s*'%(sub)))) < 1:
-            print 'no scan was found for subject %s. Removing from analysis.'%(sub)
+            print 'no scan was found for subject %s. Removing from analysis.'%
+                                                                        (sub)
             #this was not compatible with guillimin's version of pandas
             #subdf.drop(sub,axis = 0, inplace=True)
             subdf=subdf.drop(sub,axis=0)
 
     if resample == 'subsamp':
         if pv not in subdf.columns.tolist():
-            raise IOError('there is no column in the spreadsheet called %s'%(pv))
+            raise ValueError('there is no column in the spreadsheet called %s'%
+                                                                        (pv))
         else:
             subdf = subdf.sort(pv)
 
@@ -123,7 +139,8 @@ def define_bootstrap_sample(ss,subcol,subpth,pv,outpth,resample=False,par=False,
     elif not resample:
         subsamp = allsubs
     else:
-        raise IOError('value of %s not acceptable for argument resample.'%(resample))
+        raise ValueError('value of %s not acceptable for argument resample.'%
+                                                                (resample))
 
 
     # collect outputs
@@ -138,7 +155,8 @@ def define_bootstrap_sample(ss,subcol,subpth,pv,outpth,resample=False,par=False,
             pv_vals.append(subdf.ix[sub,pv])
     else:
         if pv not in subdf.columns.tolist():
-            raise IOError('there is no column in the spreadsheet called %s'%(pv))
+            raise ValueError('there is no column in the spreadsheet called %s'%
+                                                                        (pv))
         else:
             pv_vals = subdf[:][pv].tolist()
 
@@ -184,7 +202,7 @@ def subsample(allsubs,num_gps,sample_perc,rand,taskid):
     if not taskid:
         taskid = 1
 
-    subsamp_n = len(allsubs) / num_gps
+    subsamp_n = int(len(allsubs) / num_gps)
     subsamp_dict = {}
     for i in range(1,(num_gps+1)):
         if i == 1:
@@ -205,20 +223,22 @@ def subsample(allsubs,num_gps,sample_perc,rand,taskid):
 
     return subsamp
 
-def jackknife(sample,taskid):
+def jackknife(sample,taskid=None):
 
     if not taskid:
         taskid=1
 
     if taskid >= len(sample):
-        raise ValueError('With jackknife, only %s samples possible. Aborting...'%(len(allsubs)))
+        raise ValueError(
+            'With jackknife, only %s samples possible. Aborting...'%
+                                                    (len(allsubs)))
     else:
         dropper = sample[taskid - 1]
         sample.remove(dropper)
 
         return sample
 
-def permute(sample,rand,taskid):
+def permute(sample,rand,taskid=None):
     
     if not taskid:
         taskid=1
@@ -230,7 +250,7 @@ def permute(sample,rand,taskid):
 
     return rlist
 
-def bootstrap(sample,rand,taskid):
+def bootstrap(sample,rand,taskid=None):
 
     if not taskid:
         taskid=1
@@ -253,49 +273,57 @@ def convert_r2t(r,samp_df):
 
     return t
 
-def voxelwise_analysis(scans,pv_vals,outfl,outdir,out_tp='r',nonpar=False,taskid='',parallel=False,parin='',indata=False,intermed=False):
-    """Given a list of 3D volumes and a corresponding list of values for a
-    predictor variable, run voxelwise correlations.
+def voxelwise_analysis(scans,pv_vals,outfl,outdir,out_tp='r',nonpar=False,
+                       taskid='',parallel=False,parin='',indata=False,
+                       intermed=False):
+    """Given a list of 3D volumes and a corresponding list of 
+    values for a predictor variable, run voxelwise correlations.
 
     scans = a list of paths corresponding to 3D nifti volumes
 
-    pv_vals = a list of values corresponding to subject values, in the same
-    order as scans
+    pv_vals = a list of values corresponding to subject values, in 
+    the same order as scans
 
-    outfl = string to be used to identifiy the outfile map (NOTE, taskid will
-    be automatically appended to this string)
+    outfl = string to be used to identify the outfile map (NOTE, 
+    taskid will be automatically appended to this string)
 
-    outdir = the path to the directory where the outfiles will be written to
+    outdir = the path to the directory where the outfiles will be 
+    written to
 
-    out_tp = the type of map to be generated. 'r' will generate a voxelwise
-    rmap, whereas 't' will generate a voxelwise tmap
+    out_tp = the type of map to be generated. 'r' will generate a 
+    voxelwise rmap, whereas 't' will generate a voxelwise tmap
 
-    nonpar = Set to True to set voxelwise analysis from pearson to spearman
+    nonpar = Set to True to set voxelwise analysis from pearson to 
+    spearman
 
-    indata = In case 4D data is already available in an existing variable, data
-    can be specified here. Or, if an int file exists, simply add the path here.
+    indata = In case 4D data is already available in an existing 
+    variable, data can be specified here. Or, if an intermed file 
+    exists, simply add the path here.
 
-    taskid = used to keep track of id in the case of multiple bootstap samples
+    taskid = used to keep track of id in the case of multiple 
+    bootstrap samples
 
-    parallel = if true, script will copy scans into working directory to allow
-    for multiple concurrent processes. Will also make script compatible for
-    command line based parallelization.
+    parallel = if True, script will copy scans into working 
+    directory to allow for multiple concurrent processes. Will also 
+    make script compatible for command line based parallelization.
 
     parin = input path for parallelization
 
-    intermed = if true, script will not delete the 4D volume used to run the
-    voxelwise analysis
+    intermed = if True, script will not delete the 4D volume used 
+    to run the voxelwise analysis
 
 
     Outputs a path pointing to the newly created tmap
 
 
-    WARNING: As of now, this script is extremely computationally intensive for
-    a local machine. Running a subsample of 135 subjects required 5 GB memory,
-    used 100% of my CPU at times, and took well over 10 minutes...
+    WARNING: As of now, this script is extremely computationally 
+    intensive for a local machine. Running a subsample of 135 
+    subjects required 5 GB memory, used 100% of my CPU at times, 
+    and took well over 10 minutes...
 
-    NOTE: As of now, script does not regress out confounding variables or mask
-    analysis
+    NOTE: As of now, script does not regress out confounding 
+    variables or mask analysis. Also, much more efficient voxelwise 
+    analysis code is on the way...
     """
     nonpar = check_bool(nonpar)
     parallel = check_bool(parallel)
@@ -376,51 +404,62 @@ def voxelwise_analysis(scans,pv_vals,outfl,outdir,out_tp='r',nonpar=False,taskid
 
     return outstr
 
-def spatial_correlation_searchlight_from_NIAK_GLMs(indir,cov_img,outdir,contrast,templ_str,scalestr='scale',norm=False,xfm=False,eff='t',poly=1,taskid='',save=False):
+def spatial_correlation_searchlight_from_NIAK_GLMs(indir,cov_img,outdir,
+                                                   contrast,templ_str,
+                                                   scalestr='scale',
+                                                   norm=False,xfm=False,
+                                                   eff='t',poly=1,taskid='',
+                                                   save=False):
     '''
-    Given a directory containing a) NIAK glm.mat files at multiple scales, b) atlases at
-    the same resolutions, and a covariate image, this function will do the
-    following:
+    Given a directory containing a) NIAK glm.mat files at multiple 
+    scales, b) atlases at the same resolutions, and a covariate 
+    image, this function will do the following:
         1) Convert covariate image to resolution of each atlas
-        2) Perform spatial correlations between a) average connectivity matrix
-        seed from every region at every scale, b) the covariance image
-        3) Output a dictionary summarizing the results, where key = resolution
-        and value = a dataframe containing statistics for each test
+        2) Perform spatial correlations between a) average 
+        connectivity matrix seed from every region at every scale, 
+        b) the covariance image
+        3) Output a dictionary summarizing the results, where key 
+        = resolution and value = a dataframe containing statistics 
+        for each test
 
 
-    indir = path to directory containing NIAK glm.mat files and atlases.
+    indir = path to directory containing NIAK glm.mat files and 
+    atlases.
 
     cov_img = path to covariate image
 
     outdir = path to desired output directory
 
-    contrast = label of the desired contrast to extract average connectivity
-    values from glm.mat file
+    contrast = label of the desired contrast to extract average 
+    connectivity values from glm.mat file
 
     templ_str = search string to locate atlases
 
-    scalestr = the string preceding the number indicating atlas resolution in
-    the glm and atlas pahts
+    scalestr = the string preceding the number indicating atlas 
+    resolution in the glm and atlas paths
 
-    norm = If set to a path, will normalize cov_img to target image that path
-    points to. Uses flirt with nearest neighbour interpolation.  If False, no
-    normalization will occur. Acceptable inputs are nii or xfm files
+    norm = If set to a path, will normalize cov_img to target image 
+    that path points to. Uses flirt with nearest neighbour 
+    interpolation. If False, no normalization will occur. 
+    Acceptable inputs are nii or xfm files
 
-    eff = if set to 'r', will take values within the 'eff' structure of the
-    glm.mat file. If set to 't' will take values within the 'ttest' structure
-    of the glm.mat file
+    eff = if set to 'r', will take values within the 'eff' 
+    structure of the glm.mat file. If set to 't' will take values 
+    within the 'ttest' structure of the glm.mat file
 
-    poly = If int > 1, results will include test statistics modeled with a
-    n-order polynomial, where n = poly
+    poly = If int > 1, results will include test statistics modeled 
+    with a n-order polynomial, where n = poly
 
-    taskid = used to keep track of id in the case of multiple bootstrap samples
+    taskid = used to keep track of id in the case of multiple 
+    bootstrap samples
 
-    save = If set to a string, will write results from each resolution to a spreadsheet
-    with a file name indicated by string input
+    save = If set to a string, will write results from each 
+    resolution to a spreadsheet with a file name indicated by 
+    string input
 
 
-    Outputs a dict where the key is scale and the value is a dataframe
-    containing results at that scale
+    Outputs a dict where the key is scale and the value is a 
+    dataframe containing results at that scale
     '''
     save = check_bool(save)
     if save:
@@ -435,54 +474,69 @@ def spatial_correlation_searchlight_from_NIAK_GLMs(indir,cov_img,outdir,contrast
     cde = wr.codegen(6)
 
     if norm:
-	print 'normalizing tmap to fmri space'
-	# get rid of nans if necessary
-	data = ni.load(cov_img).get_data()
-	if not pandas.notnull(data[0][0][0]):
-	    nimg = os.path.join(outdir,'%s_ncov'%(cde))
-	    os.system('fslmaths %s -nan %s'%(cov_img,nimg))
-	    cov_img = '%s.nii.gz'%(nimg)	
+	    print 'normalizing tmap to fmri space'
+	    # get rid of nans if necessary
+	    data = ni.load(cov_img).get_data()
+	    if not pandas.notnull(data[0][0][0]):
+	        nimg = os.path.join(outdir,'%s_ncov'%(cde))
+	        os.system('fslmaths %s -nan %s'%(cov_img,nimg))
+	        cov_img = '%s.nii.gz'%(nimg)	
 
         if xfm:
-	    os.system('flirt -interp nearestneighbour -in %s -ref %s -applyxfm -init %s -out %s/%s_rtmap'%(cov_img,norm,xfm,outdir,cde))
-      	else:
-            os.system('flirt -interp nearestneighbour -in %s -ref %s -out %s/%s_rtmap'%(cov_img,norm,outdir,cde))
+	        os.system(
+                'flirt -interp nearestneighbour -in %s -ref %s -applyxfm -init %s -out %s/%s_rtmap'%
+                                                (cov_img,norm,xfm,outdir,cde))
+      	    else:
+                os.system(
+                    'flirt -interp nearestneighbour -in %s -ref %s -out %s/%s_rtmap'%
+                                                    (cov_img,norm,outdir,cde))
         cov_img = os.path.join(outdir,'%s_rtmap.nii.gz'%(cde))
 
     glmz = glob(os.path.join(indir,'glm*.mat'))
     dfz = {}
     for glm in glmz:
     ####################the 2 lines below suck######################
-        scale = int(os.path.split(glm)[1].rsplit('_%s'%(scalestr))[1].rsplit('.')[0])
+        scale = int(os.path.split(glm)[1].rsplit('_%s'%
+                                                (scalestr))[1].rsplit('.')[0])
         scale_templ = glob(os.path.join(indir,'%s*%s.*'%(templ_str,scale)))[0]
-        df, rdf, scalar = wr.get_parcelwise_correlation_map_from_glm_file(outdir,glm,scale_templ,scale,contrast,eff=eff,cov_msk='',cov_img=cov_img,conndf = '',poly=poly)
+        df, rdf, scalar = wr.get_parcelwise_correlation_map_from_glm_file(
+                outdir,glm,scale_templ,scale,contrast,eff=eff,cov_msk='',
+                cov_img=cov_img,conndf = '',poly=poly)
         dfz.update({scale: rdf})
         if save:
-            rdf.to_excel(os.path.join(outdir,'%s_scl%s_res%s.xls'%(save,scale,taskid)))
+            rdf.to_excel(os.path.join(outdir,'%s_scl%s_res%s.xls'
+                                                        %(save,scale,taskid)))
 
-    resdf = pandas.DataFrame(columns =['scale','parcel','measure','value','pvalue'])
+    resdf = pandas.DataFrame(columns =[
+                                'scale','parcel','measure','value','pvalue'])
     os.system('rm %s'%(os.path.join(outdir,'%s_*'%(cde))))
 
     return dfz
 
 
-def id_sig_results(dfz,outdir,outfl='outfl',perc_thr='top',thr_tp='r',thr='',out_tp='samp',res_tp='all',master_ss=False,master_thr='',par=False,parsave=False,taskid=''):
-    '''given a dict outputted from the searchlight funcion, and thresholding
-    information, this function will save the top results from the searchlight
-    into a run specific spreadsheet and/or a master spreadsheet (across
-    bootstrap samples)
+def id_sig_results(dfz,outdir,outfl='outfl',perc_thr='top',thr_tp='r',thr='',
+                   out_tp='samp',res_tp='all',master_ss=False,master_thr='',
+                   par=False,parsave=False,taskid=''):
+    '''given a dict outputted from the searchlight funcion, and 
+    thresholding information, this function will save the top 
+    results from the searchlight into a run specific spreadsheet 
+    and/or a master spreadsheet (across bootstrap samples)
 
-    dfz = a dict outputted from the searchlight function where the key is atlas
-    resolution and value is a specific dataframe of results
+    dfz = a dict outputted from the searchlight function where the 
+    key is atlas resolution and value is a specific dataframe of 
+    results
 
     outdir = the desired output directory
 
     outfl = the name of the  output file (NOTE: taskid will be
     automatically appended to this)
 
-    perc_thr: 'perc' = set threshold by top percentage of values (values determined by thr_tp)
-              'top' = keep on the top result (value determined by res_tp)
-              'fwe' = threshold based on # of comparisons (bonferonni)
+    perc_thr: 'perc' = set threshold by top percentage of values 
+              (values determined by thr_tp)
+              'top' = keep only the top result (value determined 
+              by res_tp)
+              'fwe' = threshold based on # of comparisons 
+              (bonferonni)
 
     out_tp =  'samp' = only create output spreadsheet for the input
               'mast' = only write results to a master spreadsheet
@@ -490,35 +544,44 @@ def id_sig_results(dfz,outdir,outfl='outfl',perc_thr='top',thr_tp='r',thr='',out
 
     thr_tp =  'p' = set threshold by pvalue
               'r' = set threshold by test statistic
-              'rabs' = set threshold by absolute value of test statistic'
+              'rabs' = set threshold by absolute value of test 
+               statistic
 
-    thr = desired significance threshold if thr_tp set to 'p','r', or if perc_thr set to 'perc'
+    thr = desired significance threshold if thr_tp set to 'p','r', 
+    or if perc_thr set to 'perc'
 
-    res_tp =  'r' = only report values from standard pearson r results
+    res_tp =  'r' = only report values from standard pearson r 
+               results
               'rho' = only report values from spearman r results
               'poly' = only report values from polynomial results
               'all' = report values from all three types of tests
 
-    master_ss = path to the master spreadsheet. If no path is given, a master
-    spreadsheet will be created. Will be ignored if out_tp is set to 'samp'
+    master_ss = path to the master spreadsheet. If no path is 
+    given, a master spreadsheet will be created. Will be ignored 
+    if out_tp is set to 'samp'
 
-    master_thr = threshold for master spreadsheet results. If blank, will use
-    value from thr. Will be ignored if out_to set to 'samp'. NOTE: master_thr
-    MUST be equal to or more conservative than thr
+    master_thr = threshold for master spreadsheet results. If 
+    blank, will use value from thr. Will be ignored if out_tp set 
+    to 'samp'. NOTE: master_thr MUST be equal to or more 
+    conservative than thr
 
-    par = If set to the same string as save from the searchlight function, will
-    import results spreadsheets generated from searchlight, and will make
-    script compatible for command-line based parallelization
+    par = If set to the same string as save from the searchlight 
+    function, will import results spreadsheets generated from 
+    searchlight, and will make script compatible for command-line 
+    based parallelization
 
-    parsave = If true, will also save the spreadsheets imported using par.
-    otherwise, spreadsheets will be deleted to conserve space.
+    parsave = If True, will also save the spreadsheets imported 
+    using par. otherwise, spreadsheets will be deleted to conserve 
+    space.
 
-    taskid = used to keep track of id in the case of multiple bootstrap samples
+    taskid = used to keep track of id in the case of multiple 
+    bootstrap samples
 
-    WARNING: To avoid giant files and potentially breaking things, consider
-    setting thr to very conservative stats, especially if res_tp = 'all'. Even
-    'fwe' will often yield >5% of results significant. Using perc and low
-    values, or r and a high thr, is recommended.
+    WARNING: To avoid giant files and potentially breaking things, 
+    consider setting thr to very conservative stats, especially if 
+    res_tp = 'all'. Even 'fwe' will often yield >5% of results 
+    significant. Using perc and low values, or r and a high thr, 
+    is recommended.
 
     NOTE: Function does not currently support searching for results smaller
     than a given statistic. i.e. if thr_tp and res_tp are both set to 'r', the
@@ -551,21 +614,23 @@ def id_sig_results(dfz,outdir,outfl='outfl',perc_thr='top',thr_tp='r',thr='',out
                 except:
                     raise ValueError('thr must be an int or float, unless perc_thr is True')
             else:
-                raise ValueError('thr must be an int or float, unless perc_thr is true')
+                raise ValueError('thr must be an int or float, unless perc_thr is True')
         if thr > 1:
             raise ValueError('invalid value set for thr')
     if perc_thr == 'fwe' and thr_tp != 'p':
-        print 'WARNING: because perc_thr set to fwe, change thr_tp to p...'
+        print 'WARNING: because perc_thr set to fwe, changing thr_tp to p...'
         thr_tp = 'p'
     if out_tp != 'mast' and outfl=='outfl':
-        print 'WARNING: No outfile name specified. Using name %s%s'%(outfl,taskid)
+        print 'WARNING: No outfile name specified. Using name %s%s'%
+                                                    (outfl,taskid)
 
     # wrangle spreadsheets
 
     if par:
         dfz = parallel_in('isr',outdir,par,parsave,taskid)
 
-    resdf = pandas.DataFrame(columns =['scale','parcel','measure','value','pvalue'])
+    resdf = pandas.DataFrame(columns =[
+            'scale','parcel','measure','value','pvalue'])
 
     if out_tp != 'samp':
         if os.path.isfile(master_ss):
@@ -574,17 +639,20 @@ def id_sig_results(dfz,outdir,outfl='outfl',perc_thr='top',thr_tp='r',thr='',out
             elif master_ss[-3:] == 'csv':
                 mdf = pandas.read_csv(master_ss)
             else:
-                raise IOError('input spreadsheet filetype not recognized')
+                raise ValueError('input spreadsheet filetype not recognized')
         else:
             master_ss = os.path.join(outdir,'master_ss.xls')
-            print 'no master_ss found. Creating new master_ss at %s'%(master_ss)
+            print 'no master_ss found. Creating new master_ss at %s'%
+                                                                (master_ss)
             mdf = pandas.DataFrame()
 
     coltest = dfz[dfz.keys()[0]].columns.tolist()
     if res_tp == 'rho' and 'rho' not in coltest:
-        raise IOError('res_tp set to rho but no nonparametric results available')
-    if res_tp == 'poly' and  len(coltest) < 8:
-        raise IOError('res_tp set to poly but no polynomial results available')
+        raise ValueError(
+                'res_tp set to rho but no nonparametric results available')
+    if res_tp == 'poly' and len(coltest) < 8:
+        raise ValueError(
+                'res_tp set to poly but no polynomial results available')
 
     # determine thresholds    
     if out_tp != 'samp':
@@ -593,10 +661,12 @@ def id_sig_results(dfz,outdir,outfl='outfl',perc_thr='top',thr_tp='r',thr='',out
 
         if thr_tp == 'r' or thr_tp == 'rabs':
             if master_thr < thr:
-                raise ValueError('master_thr must be more conservative than thr')
+                raise ValueError(
+                        'master_thr must be more conservative than thr')
         else:
             if master_thr > thr:
-                raise ValueError('master_thr must be more conservative than thr')
+                raise ValueError(
+                        'master_thr must be more conservative than thr')
 
     res_dict = {'r': 0, 'rho': 2}
     if len(coltest) > 8:
@@ -611,7 +681,8 @@ def id_sig_results(dfz,outdir,outfl='outfl',perc_thr='top',thr_tp='r',thr='',out
 
         if perc_thr == 'fwe':
             thr = (0.05/comps)
-            print '%s total comparisons. Setting pvalue threshold to %s'%(comps,thr)
+            print '%s total comparisons. Setting pvalue threshold to %s'%
+                                                                    (comps,thr)
         else:
             vec = []
             for scl,scf in dfz.iteritems():
@@ -659,20 +730,31 @@ def id_sig_results(dfz,outdir,outfl='outfl',perc_thr='top',thr_tp='r',thr='',out
                         update_spreadsheet(resdf,scl,x,y,res_tp)
                         if out_tp != 'samp':
                             if master_thr == thr:
-                                res_count=update_spreadsheet(mdf,scl,x,y,res_tp,v='',df_tp='mast',res_count=res_count,taskid=taskid)
+                                res_count=update_spreadsheet(
+                                        mdf,scl,x,y,res_tp,v='',df_tp='mast',
+                                        res_count=res_count,taskid=taskid)
                             else:
                                 if y[(res_dict[res_tp]) + 1] < master_thr:
-                                    res_count=update_spreadsheet(mdf,scl,x,y,res_tp,v='',df_tp='mast',res_count=res_count,taskid=taskid)
+                                    res_count=update_spreadsheet(
+                                            mdf,scl,x,y,res_tp,v='',df_tp='mast',
+                                            res_count=res_count,taskid=taskid)
                 else:
                     for k,v in res_dict.iteritems():
                         if y[v+1] < thr:
                             update_spreadsheet(resdf,scl,x,y,res_tp,v=v)
                             if out_tp != 'samp':
                                 if master_thr == thr:
-                                    res_count=update_spreadsheet(mdf,scl,x,y,res_tp,v=v,df_tp='mast',res_count=res_count,taskid=taskid)
+                                    res_count=update_spreadsheet(
+                                            mdf,scl,x,y,res_tp,v=v,
+                                            df_tp='mast',res_count=res_count,
+                                            taskid=taskid)
                                 else:
                                     if y[v+1] < master_thr:
-                                        res_count=update_spreadsheet(mdf,scl,x,y,res_tp,v=v,df_tp='mast',res_count=res_count,taskid=taskid)
+                                        res_count=update_spreadsheet(
+                                                mdf,scl,x,y,res_tp,v=v,
+                                                df_tp='mast',
+                                                res_count=res_count,
+                                                taskid=taskid)
             else:
                 if res_tp != 'all':
                     if thr_tp == 'rabs':
@@ -680,19 +762,33 @@ def id_sig_results(dfz,outdir,outfl='outfl',perc_thr='top',thr_tp='r',thr='',out
                             update_spreadsheet(resdf,scl,x,y,res_tp)
                             if out_tp != 'samp':
                                 if master_thr == thr:
-                                    res_count=update_spreadsheet(mdf,scl,x,y,res_tp,v='',df_tp='mast',res_count=res_count,taskid=taskid)
+                                    res_count=update_spreadsheet(
+                                            mdf,scl,x,y,res_tp,v='',
+                                            df_tp='mast',res_count=res_count,
+                                            taskid=taskid)
                                 else:
                                     if abs(y[(res_dict[res_tp])]) > thr:
-                                        res_count=update_spreadsheet(mdf,scl,x,y,res_tp,v='',df_tp='mast',res_count=res_count,taskid=taskid)
+                                        res_count=update_spreadsheet(
+                                                mdf,scl,x,y,res_tp,v='',
+                                                df_tp='mast',
+                                                res_count=res_count,
+                                                taskid=taskid)
                     else:
                         if y[(res_dict[res_tp])] > thr:
                             update_spreadsheet(resdf,scl,x,y,res_tp)
                             if out_tp != 'samp':
                                 if master_thr == thr:
-                                    res_count=update_spreadsheet(mdf,scl,x,y,res_tp,v='',df_tp='mast',res_count=res_count,taskid=taskid)
+                                    res_count=update_spreadsheet(
+                                            mdf,scl,x,y,res_tp,v='',
+                                            df_tp='mast',res_count=res_count,
+                                            taskid=taskid)
                                 else:
                                     if y[(res_dict[res_tp])] > thr:
-                                        res_count=update_spreadsheet(mdf,scl,x,y,res_tp,v='',df_tp='mast',res_count=res_count,taskid=taskid)
+                                        res_count=update_spreadsheet(
+                                                mdf,scl,x,y,res_tp,v='',
+                                                df_tp='mast',
+                                                res_count=res_count,
+                                                taskid=taskid)
                 else:
                     for k,v in res_dict.iteritems():
                         if thr_tp == 'rabs':
@@ -700,19 +796,35 @@ def id_sig_results(dfz,outdir,outfl='outfl',perc_thr='top',thr_tp='r',thr='',out
                                 update_spreadsheet(resdf,scl,x,y,res_tp,v=v)
                                 if out_tp != 'samp':
                                     if master_thr == thr:
-                                        res_count=update_spreadsheet(mdf,scl,x,y,res_tp,v=v,df_tp='mast',res_count=res_count,taskid=taskid)
+                                        res_count=update_spreadsheet(
+                                                mdf,scl,x,y,res_tp,v=v,
+                                                df_tp='mast',
+                                                res_count=res_count,
+                                                taskid=taskid)
                                     else:
                                         if abs(y[v]) > thr:
-                                            res_count=update_spreadsheet(mdf,scl,x,y,res_tp,v=v,df_tp='mast',res_count=res_count,taskid=taskid)
+                                            res_count=update_spreadsheet(
+                                                    mdf,scl,x,y,res_tp,v=v,
+                                                    df_tp='mast',
+                                                    res_count=res_count,
+                                                    taskid=taskid)
                         else:
                             if y[v] > thr:
                                 update_spreadsheet(resdf,scl,x,y,res_tp,v=v)
                                 if out_tp != 'samp':
                                     if master_thr == thr:
-                                        res_count=update_spreadsheet(mdf,scl,x,y,res_tp,v=v,df_tp='mast',res_count=res_count,taskid=taskid)
+                                        res_count=update_spreadsheet(
+                                                mdf,scl,x,y,res_tp,v=v,
+                                                df_tp='mast',
+                                                res_count=res_count,
+                                                taskid=taskid)
                                     else:
                                         if y[v] > thr:
-                                            res_count=update_spreadsheet(mdf,scl,x,y,res_tp,v=v,df_tp='mast',res_count=res_count,taskid=taskid)
+                                            res_count=update_spreadsheet(
+                                                    mdf,scl,x,y,res_tp,v=v,
+                                                    df_tp='mast',
+                                                    res_count=res_count,
+                                                    taskid=taskid)
 
     # save results
 
@@ -725,9 +837,11 @@ def id_sig_results(dfz,outdir,outfl='outfl',perc_thr='top',thr_tp='r',thr='',out
         print 'writing results to master spreadsheet at %s'%(master_ss)
         mdf.to_excel(master_ss)
 
-def update_spreadsheet(indf,scl,x,y,res_tp,v='',df_tp='samp',res_count=0,taskid=''):
-    '''update spreadsheet with values indexed specifically from searchlight
-    generated spreadsheet'''
+def update_spreadsheet(indf,scl,x,y,res_tp,
+                       v='',df_tp='samp',
+                       res_count=0,taskid=''):
+    '''update spreadsheet with values indexed specifically from 
+    searchlight generated spreadsheet'''
 
     res_dict = {'r': 0, 'rho': 2}
     if res_tp == 'all' or res_tp == 'poly':
@@ -747,7 +861,8 @@ def update_spreadsheet(indf,scl,x,y,res_tp,v='',df_tp='samp',res_count=0,taskid=
         if res_tp == 'all':
             indf.ix[ind, 'value'] = y[v]
             indf.ix[ind, 'pvalue'] = y[v+1]
-            indf.ix[ind, 'measure'] = res_dict.keys()[res_dict.values().index(v)]
+            indf.ix[ind, 'measure'] = res_dict.keys()[
+                                                res_dict.values().index(v)]
         else:
             indf.ix[ind, 'value'] = y[res_dict[res_tp]]
             indf.ix[ind, 'pvalue'] = y[res_dict[res_tp]+1]
@@ -761,16 +876,28 @@ def update_spreadsheet(indf,scl,x,y,res_tp,v='',df_tp='samp',res_count=0,taskid=
         if res_tp == 'all':
             indf.ix['samp_%s'%(taskid),'res%s_value'%(res_count)] = y[v]
             indf.ix['samp_%s'%(taskid),'res%s_pvalue'%(res_count)] = y[v+1]
-            indf.ix['samp_%s'%(taskid),'res%s_measure'%(res_count)] = res_dict.keys()[res_dict.values().index(v)]
+            indf.ix[
+                    'samp_%s'%(taskid),
+                    'res%s_measure'%(res_count)] = res_dict.keys()[
+                                                res_dict.values().index(v)]
         else:
-            indf.ix['samp_%s'%(taskid),'res%s_value'%(res_count)] = y[res_dict[res_tp]]
-            indf.ix['samp_%s'%(taskid),'res%s_pvalue'%(res_count)] = y[res_dict[res_tp]+1]
-            indf.ix['samp_%s'%(taskid),'res%s_measure'%(res_count)] = res_tp
+            indf.ix[
+                    'samp_%s'%(taskid),
+                    'res%s_value'%(res_count)] = y[res_dict[res_tp]]
+            indf.ix[
+                    'samp_%s'%(taskid),
+                    'res%s_pvalue'%(res_count)] = y[res_dict[res_tp]+1]
+            indf.ix[
+                    'samp_%s'%(taskid),
+                    'res%s_measure'%(res_count)] = res_tp
         res_count = res_count + 1
 
         return res_count
 
 def parallel_in(func,outdir,ipt1,ipt2,ipt3=''):
+    '''handles inputs for the various functions when in the case 
+    of parallelization
+    '''
 
     if func == 'va':
         idf = pandas.ExcelFile(ipt1).parse('Sheet1')
@@ -784,7 +911,8 @@ def parallel_in(func,outdir,ipt1,ipt2,ipt3=''):
 	    elif len(str(ind)) == 2:
 		ind = '0%s'%(ind)
 	    if scan[-1] == 'z':
-                os.system('cp %s %s/%s_subject%s.nii.gz'%(scan,outdir,ipt2,ind))
+                os.system('cp %s %s/%s_subject%s.nii.gz'%
+                                            (scan,outdir,ipt2,ind))
             else:
                 os.system('cp %s %s/%s_subject%s.nii'%(scan,outdir,ipt2,ind))
         scans = sorted(glob(os.path.join(outdir,'%s_*'%(ipt2))))
@@ -814,6 +942,9 @@ def parallel_in(func,outdir,ipt1,ipt2,ipt3=''):
 
 
 def parallel_out(func,outdir,opt1,opt2,opt3):
+    '''handles outputs for the various functions when in the case 
+    of parallelization
+    '''
 
     if func == 'dbc':
         odf = pandas.DataFrame(index = opt1,columns = ['pv_vals'])
@@ -828,69 +959,83 @@ def parallel_out(func,outdir,opt1,opt2,opt3):
 def check_bool(var):
     '''for commandline use only. Change string instances of 'False' and 'True'
     into boolean values
-    valist = list of variables to convert'''
+    '''
 
     if var == 'False':
         var = False
     return var
 
-def collect_results(ss_dir,ss_str,ss_ext,outdir,outfl='',thr_tp='r',resample=False,permtest='',summary = False):
-    '''Given result spreadsheets generated by id_sig_results, will summarize
-    data from all spreadsheets into single summary spreadsheets. Function will
-    automatically handle results using multiple statistics, and will output
-    separate results files for them.
+def collect_results(ss_dir,ss_str,ss_ext,outdir,outfl='',thr_tp='r',
+                    resample=False,permtest='',summary = False):
+    '''Given result spreadsheets generated by id_sig_results, will
+    summarize data from all spreadsheets into single summary 
+    spreadsheets. Function will automatically handle results using 
+    multiple statistics, and will output separate results files 
+    for them.
 
     ss_dir = directory where results spreadsheets are stored
 
-    ss_str = search string unique to spreadsheets. Assumes that search string 
-    is the beginning of the filenames and that, with the extension, 
-    ssdir/ss_str*.ss_ext will find only the results spreadsheets
+    ss_str = search string unique to spreadsheets. Assumes that 
+    search string is the beginning of the filenames and that, with 
+    the extension, ssdir/ss_str*.ss_ext will find only the results 
+    spreadsheets
 
-    ss_ext = String extention for results files. Will also determine extension
-    of outfiles. No '.' needed. Example 'xls'
+    ss_ext = String extention for results files. Will also 
+    determine extension of outfiles. No '.' needed. Example: 'xls'
 
-    outdir = Directory where you wish the results spreadsheets to be outputted
+    outdir = Directory where you wish the results spreadsheets to 
+    be outputted
 
     outfl = string to label outfiles
 
     thr_tp =  'r' = rank results using coefficient (r, rho, etc)
-              'rabs' = rank results using absolute value of coefficient
+              'rabs' = rank results using absolute value of 
+              coefficient
               'p' = ranks results using pvalue
 
-    resample = if not False, will assess distribution of test statistics or
-    pvalues (set with thr_tp) and output the lower percentage of this
-    distribution, the value entered into resample (between 0 and 1, should be
-    something like 0.05 for a alpha of 0.05) divided by two (i.e. if resample is
-    0.05, you would get the 2.5% and 97.5% values).
+    resample = if not False, will assess distribution of test 
+    statistics or pvalues (set with thr_tp) and output the lower 
+    percentage of this distribution, the value entered into 
+    resample (between 0 and 1, should be something like 0.05 for 
+    a alpha of 0.05) divided by two (i.e. if resample is 0.05, you 
+    would get the 2.5% and 97.5% values).
 
-    permtest = If not False, use random sampling results to assess where in
-    sampling distribution a value falls, and whether it is below an alpha 
-    threshold. Input can be a pandas dataframe or a path to a spreadsheet
-    that has statistics from one sample (probably the original sample). Will
-    use input of resample as the critical value.
+    permtest = If not False, use random sampling results to assess 
+    where in sampling distribution a value falls, and whether it 
+    is below an alpha threshold. Input can be a pandas dataframe 
+    or a path to a spreadsheet that has statistics from one sample 
+    (probably the original sample). Will use input of resample as 
+    the critical value.
 
-    summary = If true, will output an excel measure that will contain 
-    information about top results across all bootstrap samples. This is
-    somewhat time consuming and the results are not very meaningful.
+    summary = If True, will output an excel measure that will 
+    contain information about top results across all bootstrap 
+    samples. This is somewhat time consuming and the results are 
+    not very meaningful.
 
 
     Results spreadsheet will contain information on the following:
-    top_hits = number of times a seedmap had the strongest result of its batch
-    appearances = number of times as seedmap appeared in the thresholded
-    results
-    stat_mean = the average coefficient for this seedmap across batches
-    stat_sd = the SD of the coefficient for thise seedmape across boatches
-    tophits_sign = the direction of the effect, either pos, neg, or both
+    top_hits =     number of times a seedmap had the strongest 
+                   result of its batch
+    appearances =  number of times a seedmap appeared in the 
+                   thresholded results
+    stat_mean =    the average coefficient for this seedmap across 
+                   batches
+    stat_sd =      the SD of the coefficient for this seedmap 
+                   across boatches
+    tophits_sign = the direction of the effect, either pos, neg, 
+                   or both
 
     If certain flags are thrown, may also contain:
-    tophit_sign = indicates whether tophit has a positive or negaitve sign
-    upper_lim_stat = the upper limit of the resample stat distribution, as set
-    by resample
-    lower_lim_stat = the lower limit of the resample stat distribution, as set
-    by resample
-    resample_pvalue = the probability the statistic is not by chance
-    resample_sig = whether the statistic is significantly not likely to be
-    chance    
+    tophit_sign =     indicates whether tophit has a positive or 
+                      negative sign
+    upper_lim_stat =  the upper limit of the resample stat 
+                      distribution, as set by resample
+    lower_lim_stat =  the lower limit of the resample stat 
+                      distribution, as set by resample
+    resample_pvalue = the probability the statistic is not by 
+                      chance
+    resample_sig =    whether the statistic is significantly not 
+                      likely to be chance    
 
     '''
     resample = check_bool(resample)
@@ -955,33 +1100,61 @@ def collect_results(ss_dir,ss_str,ss_ext,outdir,outfl='',thr_tp='r',resample=Fal
 
     # get useless summary measures
     if summary:
-        print 'creating sumamry measures'
+        print 'creating summary measures'
         for tp in st_typez:
             for i,indz in enumerate(bigdf.iterrows()):
                 if indz[1]['measure'] == tp:
                     if i == 0:
                         if thr_tp == 'rabs':
-                            sumdf.ix[sumdf.index[0],'%s_top'%(tp)] = abs(indz[1][vcol])
+                            sumdf.ix[
+                                    sumdf.index[0],
+                                    '%s_top'%(tp)] = abs(indz[1][vcol])
                         else:    
-                            sumdf.ix[sumdf.index[0],'%s_top'%(tp)] = indz[1][vcol]
-                        sumdf.ix[sumdf.index[0],'%s_topreg'%(tp)] = indz[0]
+                            sumdf.ix[
+                                    sumdf.index[0],
+                                    '%s_top'%(tp)] = indz[1][vcol]
+                        sumdf.ix[
+                                sumdf.index[0],
+                                '%s_topreg'%(tp)] = indz[0]
                     else:
                         if thr_tp == 'r':
-                            if indz[1][vcol] > sumdf.ix[sumdf.index[0],'%s_top'%(tp)]:
-                                sumdf.ix[sumdf.index[0],'%s_top'%(tp)] = indz[1][vcol]
-                                sumdf.ix[sumdf.index[0],'%s_topreg'%(tp)] = indz[0]  
+                            if indz[1][vcol] > sumdf.ix[
+                                                        sumdf.index[0],
+                                                        '%s_top'%(tp)]:
+                                sumdf.ix[
+                                        sumdf.index[0],
+                                        '%s_top'%(tp)] = indz[1][vcol]
+                                sumdf.ix[
+                                        sumdf.index[0],
+                                        '%s_topreg'%(tp)] = indz[0]  
                         elif thr_tp == 'rabs':
-                            if abs(indz[1][vcol]) > sumdf.ix[sumdf.index[0],'%s_top'%(tp)]:
-                                sumdf.ix[sumdf.index[0],'%s_top'%(tp)] = abs(indz[1][vcol])
-                                sumdf.ix[sumdf.index[0],'%s_topreg'%(tp)] = indz[0]
+                            if abs(indz[1][vcol]) > sumdf.ix[
+                                                            sumdf.index[0],
+                                                            '%s_top'%(tp)]:
+                                sumdf.ix[
+                                        sumdf.index[0],
+                                        '%s_top'%(tp)] = abs(indz[1][vcol])
+                                sumdf.ix[
+                                        sumdf.index[0],
+                                        '%s_topreg'%(tp)] = indz[0]
                                 if indz[1][vcol] < 0:
-                                    sumdf.ix[sumdf.index[0],'%s_sign'%(tp)] = 'neg'
+                                    sumdf.ix[
+                                            sumdf.index[0],
+                                            '%s_sign'%(tp)] = 'neg'
                                 else:
-                                    sumdf.ix[sumdf.index[0],'%s_sign'%(tp)] = 'pos'
+                                    sumdf.ix[
+                                            sumdf.index[0],
+                                            '%s_sign'%(tp)] = 'pos'
                         else:
-                            if indz[1][vcol] < sumdf.ix[sumdf.index[0],'%s_top'%(tp)]:
-                                 sumdf.ix[sumdf.index[0],'%s_top'%(tp)] = indz[1][vcol]
-                                 sumdf.ix[sumdf.index[0],'%s_topreg'%(tp)] = indz[0]
+                            if indz[1][vcol] < sumdf.ix[
+                                                        sumdf.index[0],
+                                                        '%s_top'%(tp)]:
+                                 sumdf.ix[
+                                        sumdf.index[0],
+                                        '%s_top'%(tp)] = indz[1][vcol]
+                                 sumdf.ix[
+                                        sumdf.index[0],
+                                        '%s_topreg'%(tp)] = indz[0]
         if ss_ext[0] == 'x':
             sumdf.to_excel(os.path.join(outdir,'summary.xls'))
         else:
@@ -997,7 +1170,8 @@ def collect_results(ss_dir,ss_str,ss_ext,outdir,outfl='',thr_tp='r',resample=Fal
         if thr_tp == 'rabs':
             cols.append('tophit_sign')
         if resample:
-            mcols = ['upper_lim_%s'%(st_typez[0]),'lower_lim_%s'%(st_typez[0])]
+            mcols = ['upper_lim_%s'%(st_typez[0]),'lower_lim_%s'%
+                                                            (st_typez[0])]
             for mc in mcols:
                 cols.append(mc)
             if permtest:
@@ -1010,7 +1184,8 @@ def collect_results(ss_dir,ss_str,ss_ext,outdir,outfl='',thr_tp='r',resample=Fal
         print 'getting appearances and confidence statistics'
         for lab in res_regz:
             ind = bigdf.ix[lab,vcol]
-            synthesize_results(res_regz, bigdf, rdf, vcol,st_typez[0],resample,compdf)
+            synthesize_results(res_regz, bigdf, rdf, vcol,
+                                st_typez[0],resample,compdf)
 
     else:
         rdfz = {}
@@ -1045,7 +1220,8 @@ def collect_results(ss_dir,ss_str,ss_ext,outdir,outfl='',thr_tp='r',resample=Fal
             if type(compdf) == pandas.core.frame.DataFrame:
                 tstdf = compdf.loc[compdf['measure'] == tp]
             ndf = bigdf.loc[bigdf['measure'] == tp]
-            synthesize_results(rdf.index.tolist(), ndf, rdf, vcol, tp, resample, tstdf)
+            synthesize_results(rdf.index.tolist(), ndf, rdf, 
+                                vcol, tp, resample, tstdf)
 
     # extract top hits
     bigdf = None #don't need it any more and takes up a lot of memory
@@ -1077,11 +1253,15 @@ def collect_results(ss_dir,ss_str,ss_ext,outdir,outfl='',thr_tp='r',resample=Fal
     else:
         for tp,rdf in rdfz.iteritems():
             if ss_ext[0] == 'x':
-                rdf.to_excel(os.path.join(outdir,'%s_finalres%s.xls'%(outfl,tp)))
-                print 'spreadsheet being written to %s_finalres%s.xls'%(outfl,tp)
+                rdf.to_excel(os.path.join(outdir,'%s_finalres%s.xls'%
+                                                                (outfl,tp)))
+                print 'spreadsheet being written to %s_finalres%s.xls'%
+                                                                (outfl,tp)
             else:
-                rdf.to_csv(os.path.join(outdir,'%s_finalres%s.csv'%(outfl,tp)))  
-                print 'spreadsheet being written to %s_finalres%s.csv'%(outfl,tp)          
+                rdf.to_csv(os.path.join(outdir,'%s_finalres%s.csv'%
+                                                                (outfl,tp)))  
+                print 'spreadsheet being written to %s_finalres%s.csv'%
+                                                                (outfl,tp)          
 
 def remove_redundancy_labels(df):
     '''for its own reasons, id_sig_results creates separate labels for
@@ -1104,7 +1284,8 @@ def remove_redundancy_labels(df):
 
     return df
 
-def synthesize_results(res_regz, bigdf, rdf, vcol,st_type,resample,tstdf=False):
+def synthesize_results(res_regz, bigdf, rdf, vcol,
+                        st_type,resample,tstdf=False):
     for lab in res_regz:
         ind = bigdf.ix[lab,vcol]
         if type(ind) == pandas.core.series.Series:
@@ -1188,15 +1369,17 @@ def extract_top_hit(rdf,df,vcol,thr_tp):
 
 #def 
 
-def create_output_images(resdf,scldir,sclstr,outdir,outstr,input_tp,output_tp='resamp',par=False):
-    '''Using results from function collect_results as input, will generate 
-    parcel-wise brain images as a spatial representation of results.
+def create_output_images(resdf,scldir,sclstr,outdir,outstr,input_tp,
+                        output_tp='resamp',par=False):
+    '''Using results from function collect_results as input, will 
+    generate parcel-wise brain images as a spatial representation 
+    of results.
 
-    resdf = a pandas dataframe generated from function collect_results. Will be
-    ignored if par is not False.
+    resdf = a pandas dataframe generated from function 
+    collect_results. Will be ignored if par is not False.
 
-    scldir = a path pointing to the directory containing atlases for each
-    resolution represented in the results.
+    scldir = a path pointing to the directory containing atlases 
+    for each resolution represented in the results.
 
     sclstr = string unique to the atlas such that 
     [scldir]/[scstr][scale].* will successfully find each atlas
@@ -1205,29 +1388,33 @@ def create_output_images(resdf,scldir,sclstr,outdir,outstr,input_tp,output_tp='r
 
     outstr = label to ID output images
 
-    input_tp = as of now, script will only create outputs for one "measure"
-    at a time. Indicate the type of measure (i.e. a valid value within the
-    measure column of the results). Example: 'rho'
+    input_tp = as of now, script will only create outputs for one 
+    "measure" at a time. Indicate the type of measure (i.e. a 
+    valid value within the measure column of the results). 
+    Example: 'rho'
 
     output_tp = resamp = Will only output resampled p-value image
-                cross = Will output appearances and top hits, and average stat
+                cross = Will output appearances and top hits, and 
+                average stat
                 ci = Will only output average stat
                 all = all output images will be generated
 
-    par = Path pointing to an input results spreadsheet. If False, will use
-    resdf as input. 
+    par = Path pointing to an input results spreadsheet. If False, 
+    will use resdf as input. 
 
 
-    Script will output images depending on output_tp argument. If set to
-    resamp, an image indicating the resampled pvalue at each parcel will be
-    generated. If output_tp set to cross, images will be generated
-    representing # of top hits, # of appearances in thresholded results, and 
-    average statistic (i.e. r or p value) at each parcel, respectively. Passing
-    both will generate all images. 
+    Script will output images depending on output_tp argument. If 
+    set to resamp, an image indicating the resampled pvalue at 
+    each parcel will be generated. If output_tp set to cross, 
+    images will be generated representing # of top hits, # of 
+    appearances in thresholded results, and average statistic 
+    (i.e. r or p value) at each parcel, respectively. Passing both 
+    will generate all images. 
 
-    Cross most appropriate if cross-validation performed with theshold.
-    CI most appropriate if jackknife or cross-validation performed w/o threshold.
-    resamp most appropriate if permute or bootstrap performed w/o threshold.
+    Cross most appropriate if cross-validation performed with 
+    threshold. CI most appropriate if jackknife or cross-validation 
+    performed w/o threshold. resamp most appropriate if permute or 
+    bootstrap performed w/o threshold.
 
     '''
     
@@ -1257,26 +1444,30 @@ def create_output_images(resdf,scldir,sclstr,outdir,outstr,input_tp,output_tp='r
             if not pandas.notnull(indf.ix[ind,'top_hits']):
                 indf.ix[ind,'top_hits'] = 0
         indf = indf.sort()
-        #### The line below should be imrpoved.... ######
+        #### The line below should be improved.... ######
         scale_templ = glob(os.path.join(scldir,'%s%s.*'%(sclstr,scl)))[0]
         if output_tp == 'cross' or output_tp == 'all':
             print 'making top_hits image for scale %s'%(scl)
             wr.make_parcelwise_map(outdir,indf,scale_templ,
-                outfl=os.path.join(outdir,'%s_tophits_%s%s'%(outstr,input_tp,scl)),add=True,col='top_hits')
+                    outfl=os.path.join(outdir,'%s_tophits_%s%s'%(outstr,input_tp,scl)),
+                    add=True,col='top_hits')
             print 'making appearances image for scale %s'%(scl)
             wr.make_parcelwise_map(outdir,indf,scale_templ,
-                outfl=os.path.join(outdir,'%s_appearances_%s%s'%(outstr,input_tp,scl)),add=True,col='appearances')
+                    outfl=os.path.join(outdir,'%s_appearances_%s%s'%(outstr,input_tp,scl)),
+                    add=True,col='appearances')
         if output_tp == 'ci' or output_tp == 'all':
                 print 'making average coefficient image for scale %s'%(scl)
                 wr.make_parcelwise_map(outdir,indf,scale_templ,
-                    outfl=os.path.join(outdir,'%s_average_coef_%s%s'%(outstr,input_tp,scl)),add=True,col='mean_%s'%(input_tp))
+                        outfl=os.path.join(outdir,'%s_average_coef_%s%s'%(outstr,input_tp,scl)),
+                        add=True,col='mean_%s'%(input_tp))
         if output_tp == 'resamp' or output_tp == 'all':
             if 'resample_pvalue' in indf.columns.tolist():
                 print 'making resample pvalue image for scale %s'%(scl)
                 wr.make_parcelwise_map(outdir,indf,scale_templ,
-                    outfl=os.path.join(outdir,'%s_resample_p_%s%s'%(outstr,input_tp,scl)),add=True,col='resample_pvalue')
+                        outfl=os.path.join(outdir,'%s_resample_p_%s%s'%(outstr,input_tp,scl)),
+                        add=True,col='resample_pvalue')
             else:
-                raise IOError('resamp passed for argument output_tp, but no resampling statistics available')
+                raise ValueError('resamp passed for argument output_tp, but no resampling statistics available')
 
 
 

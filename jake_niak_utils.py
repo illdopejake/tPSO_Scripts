@@ -1,6 +1,6 @@
 import os
 from glob import glob
-from scipy.io import loadmat,savemat
+from scipy.io import loadmat
 import pandas
 import numpy as np
 import math
@@ -27,6 +27,18 @@ def reshuffle_matrix(array,scale_n,var=False):
         cntr = 1
 
     return pdict
+
+def extract_connectome_from_subject(matfl,contrast,scale_n):
+    mat = loadmat(matfile)
+    arr = mat[contrast][0][0][0][0]
+    mtx = np.full((scale_n,scale_n),np.nan)
+    pdict = reshuffle_matrix(arr,scale_n)
+    for i,j in out1.iteritems():
+        mtx[(i[0] - 1)][(i[1] -1 )] = j
+        mtx[(i[1] - 1)][(i[0] - 1)] = j
+
+    return mtx
+
 
 def create_df_from_mat(matfl,scl_no,pval,mat_tp='ind',eff_tp='eff'):
 
@@ -255,25 +267,3 @@ def get_rvalues_from_glm(glm,scale,seeds,conns,otpt=False):
 
     return res
 
-def get_all_rvalues_from_glm(glm,scale,otpt=False,otpt_tp = 'mat'):
-    mat = loadmat(glm)
-    subs = []
-    for i in range(len(mat['model_group'][0][0][2])):
-        subs.append(mat['model_group'][0][0][2][i][0][0])
-
-    submatz = {}
-    for i,sub in enumerate(subs):
-        print 'working on subject %s'%(sub)
-        mdict = reshuffle_matrix(mat['model_group'][0][0][1][i],scale)
-        mtx = np.full((444,444),np.nan)
-        for k,v in mdict.iteritems():
-            mtx[(k[1]-1)][(k[0]-1)] = mdict[(k[0],k[1])]
-            mtx[(k[0]-1)][(k[1]-1)] = mdict[(k[0],k[1])]
-        submatz.update({sub: mtx})
-
-    if otpt:
-        if otpt_tp == 'mat':
-            savemat(otpt,submatz)
-
-    else:
-        return submatz

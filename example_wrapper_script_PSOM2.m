@@ -11,55 +11,61 @@ addpath(genpath('/gs/scratch/jvogel44/bsc/scripts/'));
 
 %%%SET INPUT FILES%%%
 
+% spreadsheet with data
 files_in.ss = '/gs/scratch/jvogel44/bsc/stopad_updated_csf_fMRI_edited.csv';
+% path to subject scans
 files_in.subpath = '/gs/scratch/jvogel44/bsc/gm_files_raw_real/';
+% path to directory containing other inputs (e.g. atlases and such)
 files_in.indir = '/gs/scratch/jvogel44/bsc/indir/';
+% path to file to be used for coregistration
 files_in.norm_fl = '/gs/scratch/jvogel44/bsc/rMNI152_T1_2mm_brain.nii';
+% path to transformation to be used for coregistration
 files_in.xfm = '/gs/scratch/jvogel44/bsc/indir/bsc_tfm'
 %files_in.mss=
 
 %%%SET PIPELINE OPTIONS%%%
 
 opt.folder_out = '/gs/scratch/jvogel44/bsc/results/bsc_perm_1000_yc_raw_20160908';
-opt.label_out = 'raw';
-opt.rand_seed = 1;
-opt.nb_samp = 1000;
-opt.flag_test = false;
+opt.label_out = 'raw'; % label for all outputs
+opt.rand_seed = 1; % set the seed for randomization, so results can be reproduced
+opt.nb_samp = 1000; % number of bootstrap samples
+opt.flag_test = false; % Generate all the inputs without executing pipeline
 
 %%%SET INPUTS AND OPTIONS FOR DEFINE BOOTSTRAP SAMPLE%%%
 
 %INPUTS
-opt.dbs.subcol = 'scan';
-opt.dbs.pv = 'expected_age_onset_no_sibs_min_actual';
+opt.dbs.subcol = 'scan'; % name of column label with subject ID
+opt.dbs.pv = 'expected_age_onset_no_sibs_min_actual'; % column label for predictor variable
 
 %OPTIONS
 
-opt.dbs.resamp = 'permute';
-opt.dbs.par = 'True';
-%opt.dbs.perc = 0.50;
+opt.dbs.resamp = 'permute'; % run permutation testing
+opt.dbs.par = 'True'; % run permutation samples in parallel
+%opt.dbs.perc = 0.50; 
 %opt.dbs.gps = 3;
 
 %%%SET OPTIONS FOR VOXELWISE ANALYSIS%%%
 
-opt.va.outmap = 't';
-opt.va.nonpar = 'False';
-opt.va.par = 'True';
-opt.va.inter = 'False';
+opt.va.outmap = 't';  % generate an output tmap or rmap
+opt.va.nonpar = 'False'; % run voxelwise spearmans instead of pearsons correlations
+opt.va.par = 'True'; % Run voxelwise analyses in parallel
+opt.va.inter = 'False'; % Save intermediate 4D map for voxelwise analysis
 
 %%%SET INPUTS AND OPTIONS FOR SEARCHLIGHT%%%
 
 %INPUTS
-opt.scs.contrast= 'avg';
-opt.scs.templ_str= 'masked';
+opt.scs.contrast= 'avg'; % Contrast to be used from NIAK glm_file
+opt.scs.templ_str= 'masked'; % string to help find atlas templates
 
 %OPTIONS
-opt.scs.sclstr = 'scale'; 
-opt.scs.eff = 't';
-opt.scs.poly = 2;
+opt.scs.sclstr = 'scale';  % string to help determine scale of a given atlas
+opt.scs.eff = 't'; % take information from eff or ttest structures in glm_file
+opt.scs.poly = 2; % also run n-order polynomial regression where n=poly
 
 %%%SET OPTIONS FOR ID SIG RESULTS%%%
 
-opt.isr.perc = 'perc';
+% The following inputs will save *all* results
+opt.isr.perc = 'perc'; 
 opt.isr.type = 'r';
 opt.isr.thresh = '1'; 
 opt.isr.outtype = 'samp';
